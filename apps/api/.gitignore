@@ -1,0 +1,11 @@
+# Compiled output (tsc -> dist)
+dist/
+
+# Test coverage
+coverage/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Drizzle Kit scratch output (checked-in migrations live in src/db/migrations)
+drizzle/

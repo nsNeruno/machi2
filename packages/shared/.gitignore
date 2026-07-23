@@ -1,0 +1,8 @@
+# Compiled output (tsc -> dist), rebuilt by consumers
+dist/
+
+# Test coverage
+coverage/
+
+# TypeScript incremental build info
+*.tsbuildinfo

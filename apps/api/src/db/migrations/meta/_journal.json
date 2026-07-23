@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1774569600000,
+      "tag": "0000_initial_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784638800000,
+      "tag": "0001_domain_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784725200000,
+      "tag": "0002_admin_sessions",
+      "breakpoints": true
+    }
+  ]
+}

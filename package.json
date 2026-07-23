@@ -1,0 +1,33 @@
+{
+  "name": "machi2",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names api,web --prefix-colors cyan,magenta \"pnpm dev:api\" \"pnpm dev:web\"",
+    "dev:api": "pnpm --filter @machi2/shared build && pnpm --filter @machi2/api dev",
+    "dev:web": "pnpm --filter @machi2/web dev",
+    "build": "pnpm -r --if-present build",
+    "test": "pnpm --filter @machi2/shared build && pnpm -r --if-present test",
+    "test:api": "pnpm --filter @machi2/shared build && pnpm --filter @machi2/api test:api",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "db:generate": "pnpm --filter @machi2/api db:generate",
+    "db:migrate": "pnpm --filter @machi2/api db:migrate",
+    "db:seed": "pnpm --filter @machi2/api db:seed",
+    "db:reset": "docker compose down -v && docker compose up -d postgres && pnpm db:migrate && pnpm db:seed"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "concurrently": "^9.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}
