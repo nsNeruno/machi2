@@ -5,6 +5,7 @@
     "buildCommand": "pnpm install --frozen-lockfile && pnpm build"
   },
   "deploy": {
+    "preDeployCommand": "pnpm --filter @machi2/api db:migrate",
     "startCommand": "node apps/api/dist/main.js",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 30,

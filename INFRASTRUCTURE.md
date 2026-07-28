@@ -125,6 +125,7 @@ Add `railway.json` at the repo root:
     "buildCommand": "pnpm install --frozen-lockfile && pnpm build"
   },
   "deploy": {
+    "preDeployCommand": "pnpm --filter @machi2/api db:migrate",
     "startCommand": "node apps/api/dist/main.js",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 30,
@@ -140,6 +141,22 @@ and reintroduce cold starts — the exact failure mode `ARCHITECTURE.md`'s "Deli
 not doing" section rules out elsewhere. This is the single most important line in this
 file to get right; everything else fails soft, this one fails silently (it just looks
 like live updates stopped working).
+
+**`preDeployCommand` is what actually creates the schema.** Railway runs it in a
+separate, throwaway container — built from the same image as the app, with the same
+env vars (including `DATABASE_URL`) — after the build succeeds but before any new
+instance starts serving traffic. `db:migrate` (`tsx src/db/scripts/migrate.ts`, see
+`apps/api/package.json`) applies any pending Drizzle migrations and is safe to rerun —
+it no-ops if nothing's pending, tracked via Drizzle's own migrations table. Without
+this line, the API boots against a Postgres service that has a connection but zero
+tables, and crashes immediately: `LoadGovernorService` and `QueueEventsService` both
+query real tables from `onModuleInit`, so a schema-less database is a hard crash loop
+(`relation "app_meta" does not exist` / `relation "locations" does not exist`,
+Postgres `42P01`), not a soft failure — see §11.
+
+If you provisioned the Postgres service and deployed the API *before* this line existed
+in `railway.json`, pushing this change and redeploying is the fix — no separate manual
+migrate step needed, Railway runs the pre-deploy command on every deploy going forward.
 
 There's no `docker-compose.yml`/Caddy step here: Nixpacks builds from source per deploy,
 and the API serves the built SPA itself via `@fastify/static` — one service, one origin.
@@ -190,8 +207,10 @@ and silently disables the one-active-entry-per-device rule.
 ## 4. First deploy
 
 Trigger the first deploy (push to the connected branch, or use the dashboard's manual
-deploy button). Watch the build logs until the health check at `/api/health` goes
-green.
+deploy button). Watch the build logs, then the pre-deploy logs (this is where
+`db:migrate` from §2 runs and creates the schema — check here first if the deploy
+stalls or the app crash-loops right after), until the health check at `/api/health`
+goes green.
 
 **Admin access is available immediately.** On its first boot the API creates the initial
 superadmin from `ADMIN_SEED_EMAIL` / `ADMIN_SEED_PASSWORD` (§3) if no superadmin exists —
@@ -398,6 +417,7 @@ somehow grows past that, something's off; see `ARCHITECTURE.md`'s migration trig
 | Backup workflow fails silently                     | `DATABASE_PUBLIC_URL` secret is stale, or the Postgres service's public networking got disabled            |
 | Build fails inside `pnpm i --frozen-lockfile` — `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING` or `packages field missing or empty` | Nixpacks doesn't support pnpm 11 yet (confirmed open bug, railwayapp/nixpacks#1419) — pin `packageManager` in the root `package.json` to a pnpm 10.x release instead (`corepack use pnpm@10`, then commit the regenerated `pnpm-lock.yaml`) |
 | Deploy fails: "Free plan deployments must be serverless" — even after enabling Serverless in Settings | `railway.json` still has `sleepApplication: false`, which overrides the dashboard toggle on every deploy from config-as-code — flip it to `true` for Free-tier testing, commit, then use "Deploy latest commit" from the command palette (a plain Redeploy of the failed build won't pick up the change) |
+| App builds and starts, then crash-loops with `PostgresError: relation "..." does not exist` (code `42P01`), e.g. on `app_meta` or `locations` | The Postgres service has no schema yet — `railway.json` is missing `deploy.preDeployCommand`, or it was added after the DB was already provisioned. Add/verify `"preDeployCommand": "pnpm --filter @machi2/api db:migrate"` (§2), commit, redeploy — Railway runs it in a separate container before the new instance takes traffic |
 
 ---
 
