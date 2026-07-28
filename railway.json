@@ -10,6 +10,6 @@
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
     "numReplicas": 1,
-    "sleepApplication": false
+    "sleepApplication": true
   }
 }

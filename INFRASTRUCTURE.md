@@ -21,21 +21,35 @@ domain — or wait on nameserver propagation — to stand the app up.
 ### Testing on Railway's Free plan first
 
 For a small pilot (≈20 or fewer users, not production) the same steps below work
-unchanged on Railway's **Free** plan instead of Hobby — same `railway.json`, same
-variable set, just skip §7 (domain) and use the generated `*.up.railway.app` URL.
-Worth doing before paying for Hobby, with caveats:
+mostly unchanged on Railway's **Free** plan instead of Hobby — same variable set, skip
+§7 (domain), use the generated `*.up.railway.app` URL. One change to `railway.json` is
+required first, and it's not optional. Worth doing before paying for Hobby, with
+caveats:
 
+- **Free plan mandates Serverless (sleep-when-idle) — confirmed, not a maybe.** Railway
+  rejects deploys on Free with `sleepApplication: false` outright ("Free plan
+  deployments must be serverless"). Before deploying to Free, set
+  `"sleepApplication": true` in `railway.json`, commit, and deploy via the command
+  palette's **"Deploy latest commit"** — a plain "Redeploy" of an already-failed build
+  does not pick up a settings change, which is the usual cause of "I already enabled it
+  and it still fails."
+- **This means SSE connections *will* drop during the pilot, by design.** Railway
+  treats a service as idle after ~10 minutes with no outbound traffic and sleeps it —
+  which kills every open SSE stream and cold-starts on the next request. The client
+  reconnects automatically (`Last-Event-ID`), so it's not data loss, just a visible
+  reconnect/cold-start blip after any quiet period. That's the real trade of testing on
+  Free: it is not representative of the "always-on, no sleep" behavior Hobby guarantees
+  and this app's architecture assumes (`ARCHITECTURE.md` §1).
+- **Revert `sleepApplication` to `false` before ever deploying to Hobby.** It's easy to
+  forget this flip once Free-tier testing is done — forgetting it silently reintroduces
+  the exact SSE-killing bug this file's `railway.json` exists to prevent, just in
+  production instead of a pilot. Treat it as a required step of moving to Hobby, not an
+  afterthought.
 - **0.5GB RAM / 1 vCPU is per service, not shared.** The API and Postgres are separate
   Railway services, so this isn't the same risk as cramming everything onto one small
   VPS box (see Appendix A's `XS 1.1` warning) — each gets its own allowance. For ~20
   users doing occasional enqueue/done taps plus a handful of open SSE connections, this
   is genuinely light load and should be fine on both sides.
-- **Verify services don't sleep when idle — this is the one that actually matters.**
-  `railway.json`'s `sleepApplication: false` exists because sleeping kills every open
-  SSE connection, silently breaking the live-updates requirement (`ARCHITECTURE.md` §1).
-  Confirm Free-tier behavior directly (check current Railway docs/dashboard, or leave it
-  idle 30+ minutes mid-test and confirm a stream stays open) rather than assuming Hobby's
-  guarantee carries over.
 - **No region selection on Free** — testers in `Asia/Jakarta` will see worse latency
   than a Singapore Hobby deploy. Fine for validating functionality, not representative
   of production feel.
@@ -46,7 +60,8 @@ Worth doing before paying for Hobby, with caveats:
   monorepo build pushes close to that ceiling.
 
 Treat this as a functional pilot, not a load or production rehearsal — move to Hobby
-(the rest of this runbook) once it's time for real users.
+(the rest of this runbook) once it's time for real users, and don't forget the
+`sleepApplication` flip back to `false` when you do.
 
 ---
 
@@ -382,6 +397,7 @@ somehow grows past that, something's off; see `ARCHITECTURE.md`'s migration trig
 | Unexpected Railway bill                            | The hard spending limit didn't hold, or the Cloudflare rate-limit rule wasn't actually applied — check both, and the reconciliation loop's last run |
 | Backup workflow fails silently                     | `DATABASE_PUBLIC_URL` secret is stale, or the Postgres service's public networking got disabled            |
 | Build fails inside `pnpm i --frozen-lockfile` — `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING` or `packages field missing or empty` | Nixpacks doesn't support pnpm 11 yet (confirmed open bug, railwayapp/nixpacks#1419) — pin `packageManager` in the root `package.json` to a pnpm 10.x release instead (`corepack use pnpm@10`, then commit the regenerated `pnpm-lock.yaml`) |
+| Deploy fails: "Free plan deployments must be serverless" — even after enabling Serverless in Settings | `railway.json` still has `sleepApplication: false`, which overrides the dashboard toggle on every deploy from config-as-code — flip it to `true` for Free-tier testing, commit, then use "Deploy latest commit" from the command palette (a plain Redeploy of the failed build won't pick up the change) |
 
 ---
 
