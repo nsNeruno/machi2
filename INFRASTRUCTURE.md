@@ -14,13 +14,47 @@ Do these in order. Oracle Cloud Always Free — the previous primary target, now
 **$0 fallback** — is fully preserved in **Appendix A** below; nothing there was deleted,
 only reordered.
 
+The **domain and Cloudflare** setup is deliberately near the end (§7): everything before
+it runs on Railway's generated `*.up.railway.app` URL, so you don't need to own the
+domain — or wait on nameserver propagation — to stand the app up.
+
+### Testing on Railway's Free plan first
+
+For a small pilot (≈20 or fewer users, not production) the same steps below work
+unchanged on Railway's **Free** plan instead of Hobby — same `railway.json`, same
+variable set, just skip §7 (domain) and use the generated `*.up.railway.app` URL.
+Worth doing before paying for Hobby, with caveats:
+
+- **0.5GB RAM / 1 vCPU is per service, not shared.** The API and Postgres are separate
+  Railway services, so this isn't the same risk as cramming everything onto one small
+  VPS box (see Appendix A's `XS 1.1` warning) — each gets its own allowance. For ~20
+  users doing occasional enqueue/done taps plus a handful of open SSE connections, this
+  is genuinely light load and should be fine on both sides.
+- **Verify services don't sleep when idle — this is the one that actually matters.**
+  `railway.json`'s `sleepApplication: false` exists because sleeping kills every open
+  SSE connection, silently breaking the live-updates requirement (`ARCHITECTURE.md` §1).
+  Confirm Free-tier behavior directly (check current Railway docs/dashboard, or leave it
+  idle 30+ minutes mid-test and confirm a stream stays open) rather than assuming Hobby's
+  guarantee carries over.
+- **No region selection on Free** — testers in `Asia/Jakarta` will see worse latency
+  than a Singapore Hobby deploy. Fine for validating functionality, not representative
+  of production feel.
+- **Custom domains are limited/unavailable on Free** — not a problem here, since this
+  path is meant to skip §7 entirely and use the generated URL.
+- The 1GB figure often quoted is *ephemeral disk* (the build/container filesystem), not
+  the Postgres volume (0.5GB on Free) — watch the first build's logs in case a pnpm
+  monorepo build pushes close to that ceiling.
+
+Treat this as a functional pilot, not a load or production rehearsal — move to Hobby
+(the rest of this runbook) once it's time for real users.
+
 ---
 
 ## 0. Prerequisites
 
 | Thing              | Notes                                                          |
 | ------------------- | -------------------------------------------------------------- |
-| Domain name         | ~$10–15/year. Any registrar.                                   |
+| Domain name         | ~$10–15/year. Any registrar. Not registered until §7.          |
 | Cloudflare account  | Free tier                                                      |
 | Railway account     | Hobby plan, $5/mo minimum usage                                 |
 | GitHub account      | Repo + Railway's GitHub deploy integration                      |
@@ -31,21 +65,24 @@ only if you plan to also stand up the Oracle or paid-VPS fallback in Appendix A.
 
 ---
 
-## 1. Domain and Cloudflare
+## 1. Create the Railway project
 
-1. Register the domain.
-2. Add the site to Cloudflare, change the nameservers at your registrar, wait for
-   activation (minutes to a few hours).
-3. **SSL/TLS → Overview → set encryption mode to "Full (strict)".**
-   Same reasoning as the Oracle path: mismatched modes cause the most common
-   Cloudflare-plus-origin bugs, even though Railway (not Caddy) terminates TLS here.
-4. Leave the DNS record creation for step 3 — you don't have a target hostname yet.
-
----
-
-## 2. Create the Railway project
-
-1. New Project → **Deploy from GitHub repo** → select this repository.
+1. New Project → **Deploy from GitHub repo** → select this repository. Railway will
+   likely auto-detect this as a monorepo and offer to scaffold a service per package it
+   finds, each with its own **Root Directory** pre-filled (e.g. `apps/api`) and its own
+   auto-generated `pnpm --filter <package> build`/`start` commands. **Decline that for
+   the API service** — this repo is what Railway's own docs call a "shared" monorepo
+   (`packages/shared` is consumed by both `apps/api` and `apps/web` via `workspace:*`),
+   and shared monorepos should **not** have a Root Directory set. If Root Directory is
+   pinned to `apps/api`, `pnpm install` runs from inside that folder, can't see the
+   workspace root's `pnpm-lock.yaml`/`pnpm-workspace.yaml`, and fails to resolve
+   `workspace:*` — which looks exactly like "can't deploy because the server is in a
+   subdirectory." Leave the API service's Root Directory **blank** (repo root) and let
+   it use the `railway.json` from §2 instead, which already has the right
+   `buildCommand`/`startCommand` from the repo root. The root `package.json`'s
+   `packageManager: "pnpm@…"` field is also load-bearing here — it's what stops
+   Nixpacks from silently defaulting to `npm` despite the `pnpm-lock.yaml` being
+   present, a separate, common cause of the same symptom.
 2. Add a **Postgres** service to the same project (Railway's built-in plugin, not a
    manually configured container). It provisions its own volume and injects a
    `DATABASE_URL` reference variable that the API service can consume directly — no
@@ -61,22 +98,7 @@ only if you plan to also stand up the Oracle or paid-VPS fallback in Appendix A.
 
 ---
 
-## 3. Custom domain
-
-1. On the API service: **Settings → Networking → Custom Domain** → add your domain.
-   Railway gives you a CNAME target (something like `<service>.up.railway.app`).
-2. In Cloudflare, add a `CNAME` record pointing your domain (or subdomain) at that
-   target.
-3. Railway provisions and renews the TLS certificate for the custom domain itself once
-   the CNAME resolves — unlike the self-hosted Caddy path in Appendix A, you generally
-   don't need to grey-cloud the DNS record first. Cloudflare **Proxied (orange cloud)**
-   from the start is normally fine. If certificate issuance stalls, temporarily
-   switching the record to **DNS-only (grey cloud)** can help, the same troubleshooting
-   fallback as the Caddy path — it just isn't required by default.
-
----
-
-## 4. Build and deploy configuration
+## 2. Build and deploy configuration
 
 Add `railway.json` at the repo root:
 
@@ -109,15 +131,26 @@ and the API serves the built SPA itself via `@fastify/static` — one service, o
 
 ---
 
-## 5. Secrets
+## 3. Secrets
 
 Unlike the Oracle path, there's no `.env` file on a VM — set these as **Variables** on
-the API service in the Railway dashboard (Service → Variables). Generate the random
-ones locally first:
+the API service in the Railway dashboard (Service → Variables).
+
+Generate them locally with `scripts/generate-prod-env.sh` rather than running
+`openssl rand` by hand for each one:
 
 ```bash
-openssl rand -base64 32   # run once per secret below, paste the output in
+./scripts/generate-prod-env.sh          # writes .env.production, prompts for admin email
+./scripts/generate-prod-env.sh --push   # also pushes each value via the Railway CLI
 ```
+
+Open the generated file and copy each value into the Railway dashboard (or let `--push`
+do it, if the Railway CLI is installed and linked), then **delete the file** — it's a
+staging artifact, not something Railway or the app reads directly, and it's already
+gitignored (`.env.*`) so it can't be committed by accident. The script deliberately
+doesn't generate `DATABASE_URL` — see the table below for why — and it skips the
+rate-limit/cooldown variables entirely, since those already default correctly in code
+(`.env.example`) and aren't secrets.
 
 Set these variables on the API service:
 
@@ -130,7 +163,7 @@ Set these variables on the API service:
 | `SESSION_SECRET`         | `openssl rand -base64 32`                                          |
 | `IP_HASH_SALT`           | `openssl rand -base64 16`                                          |
 | `SESSION_COOKIE_SECURE`  | `1`                                                                |
-| `ADMIN_SEED_EMAIL`       | your email — first superadmin login (see §6)                      |
+| `ADMIN_SEED_EMAIL`       | your email — first superadmin login (see §4)                      |
 | `ADMIN_SEED_PASSWORD`    | `openssl rand -base64 24` — note it down, it's your first login    |
 
 **This variable set is the only unversioned state besides the database.** Back up
@@ -139,28 +172,29 @@ and silently disables the one-active-entry-per-device rule.
 
 ---
 
-## 6. First deploy
+## 4. First deploy
 
 Trigger the first deploy (push to the connected branch, or use the dashboard's manual
 deploy button). Watch the build logs until the health check at `/api/health` goes
 green.
 
 **Admin access is available immediately.** On its first boot the API creates the initial
-superadmin from `ADMIN_SEED_EMAIL` / `ADMIN_SEED_PASSWORD` (§5) if no superadmin exists —
+superadmin from `ADMIN_SEED_EMAIL` / `ADMIN_SEED_PASSWORD` (§3) if no superadmin exists —
 no manual seed step. Log in at `/admin`, then change the password from within the console.
 The seed values are ignored on every subsequent boot, so they never override a password
 you later set. (The `pnpm db:seed` script is dev-only — it also inserts fixture locations
 and games and must not be run against production.)
 
-Once the deploy is green and the custom domain resolves (§3), confirm:
+Railway serves the app on a generated `*.up.railway.app` URL (API service → **Settings →
+Networking → Generate Domain** if one isn't shown yet). You don't need your own domain to
+verify the deploy — that comes last, in §7. On the generated URL, confirm:
 
-1. `https://yourdomain/api/health` returns 200.
-2. `https://yourdomain/admin` loads and the seeded superadmin can log in.
-3. Cloudflare SSL/TLS mode is still **Full (strict)**.
+1. `https://<service>.up.railway.app/api/health` returns 200.
+2. `https://<service>.up.railway.app/admin` loads and the seeded superadmin can log in.
 
 ---
 
-## 7. CI/CD
+## 5. CI/CD
 
 This is the biggest mechanical difference from the Oracle path: **no GHCR, no SSH, no
 multi-arch build required for day-to-day deploys.** Railway watches the connected
@@ -176,7 +210,7 @@ GitHub branch and builds + deploys on every push using Nixpacks.
 
 ---
 
-## 8. Backups
+## 6. Backups
 
 Only `locations`, `games`, `admin_users`, and `admin_location_grants` matter. Queue
 data is disposable by definition — a restore that loses the current day's queue is an
@@ -222,7 +256,7 @@ jobs:
 ```
 
 `DATABASE_PUBLIC_URL` (store it as a GitHub Actions secret) is **not** the same value as
-the `DATABASE_URL` reference variable used in §5 — that one only resolves inside
+the `DATABASE_URL` reference variable used in §3 — that one only resolves inside
 Railway's private network and GitHub's runners can't reach it. Enable a public
 connection for the Postgres service (its **Connect** tab in the Railway dashboard) and
 use that externally-reachable string instead. Exact wording of this setting has moved
@@ -234,7 +268,38 @@ this is the only irreplaceable data in the system.
 
 ---
 
-## 9. Monitoring
+## 7. Domain and Cloudflare
+
+Everything above runs on Railway's generated `*.up.railway.app` URL — you only need your
+own domain to put the app on a real address behind Cloudflare's edge (DNS, CDN, and the
+rate-limiting rule in §8). Do this once the deploy is green.
+
+1. Register the domain (any registrar, ~$10–15/year).
+2. Add the site to Cloudflare, change the nameservers at your registrar, and wait for
+   activation (minutes to a few hours).
+3. **SSL/TLS → Overview → set encryption mode to "Full (strict)".** Mismatched modes
+   cause the most common Cloudflare-plus-origin bugs, even though Railway (not Caddy)
+   terminates TLS here.
+4. On the API service: **Settings → Networking → Custom Domain** → add your domain.
+   Railway gives you a CNAME target (something like `<service>.up.railway.app`).
+5. In Cloudflare, add a `CNAME` record pointing your domain (or subdomain) at that
+   target.
+6. Railway provisions and renews the TLS certificate for the custom domain itself once
+   the CNAME resolves — unlike the self-hosted Caddy path in Appendix A, you generally
+   don't need to grey-cloud the DNS record first. Cloudflare **Proxied (orange cloud)**
+   from the start is normally fine. If certificate issuance stalls, temporarily switching
+   the record to **DNS-only (grey cloud)** can help, the same troubleshooting fallback as
+   the Caddy path — it just isn't required by default.
+
+Once the custom domain resolves, confirm:
+
+1. `https://yourdomain/api/health` returns 200.
+2. `https://yourdomain/admin` loads and the seeded superadmin can log in.
+3. Cloudflare SSL/TLS mode is still **Full (strict)**.
+
+---
+
+## 8. Monitoring
 
 Minimum viable:
 
@@ -268,7 +333,7 @@ Because Railway is metered, this section is load-bearing, not a nice-to-have (se
 
 ---
 
-## 10. Verification checklist
+## 9. Verification checklist
 
 Don't call it done until all of these pass **against the public domain**, not localhost.
 
@@ -291,7 +356,7 @@ That last one matters more than it sounds. Test it before you have users.
 
 ---
 
-## 11. Routine operations
+## 10. Routine operations
 
 | Cadence   | Task                                                                     |
 | --------- | -------------------------------------------------------------------------- |
@@ -305,11 +370,11 @@ somehow grows past that, something's off; see `ARCHITECTURE.md`'s migration trig
 
 ---
 
-## 12. Things that will go wrong
+## 11. Things that will go wrong
 
 | Symptom                                          | Cause                                                                                                     |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Site unreachable, deploy shows healthy             | Custom domain CNAME not resolving yet, or Cloudflare proxy status mismatched with cert issuance (§3)      |
+| Site unreachable, deploy shows healthy             | Custom domain CNAME not resolving yet, or Cloudflare proxy status mismatched with cert issuance (§7)      |
 | Infinite redirect loop                             | Cloudflare SSL mode is "Flexible" instead of "Full (strict)"                                              |
 | Live updates never arrive; everything else fine    | Check Railway's edge isn't buffering the SSE stream (no Caddyfile to fix here — this is the first thing to isolate, same symptom as the Caddy `flush_interval` bug) |
 | Throttle never triggers                            | `TRUST_PROXY` not set to `1`; all traffic reads as Railway's edge IP                                       |
@@ -319,7 +384,7 @@ somehow grows past that, something's off; see `ARCHITECTURE.md`'s migration trig
 
 ---
 
-## 13. If you need to move
+## 12. If you need to move
 
 Full runbook is in `ARCHITECTURE.md` under "Migration runbook" — applies to any target.
 Short version of where each fallback is documented:
@@ -349,8 +414,9 @@ under Docker Compose, behind Cloudflare.
 **Cost:** $0/month plus the domain.
 **Time:** roughly half a day, most of it waiting on Oracle.
 
-Steps A.0/A.1 overlap with the main runbook's §0/§1 (same domain, same Cloudflare
-account) — reuse what you already set up there. Steps A.2 onward are genuinely
+Steps A.0/A.1 overlap with the main runbook's Prerequisites (§0) and Domain and
+Cloudflare (§7) sections (same domain, same Cloudflare account) — reuse what you already
+set up there. Steps A.2 onward are genuinely
 different from the Railway path.
 
 ### A.0. Prerequisites
@@ -365,7 +431,7 @@ different from the Railway path.
 
 ### A.1. Domain and Cloudflare
 
-Same as the main runbook's §1 — register the domain, add it to Cloudflare, set
+Same as the main runbook's Domain and Cloudflare section (§7) — register the domain, add it to Cloudflare, set
 **SSL/TLS → Overview → Full (strict)**, and leave DNS record creation for A.3c (you
 don't have an IP yet).
 
@@ -502,6 +568,12 @@ echo "Note the ADMIN_SEED_PASSWORD above — it's your first login."
 
 Copy `docker-compose.yml` and `Caddyfile` from `ARCHITECTURE.md` (Phase 2a) into
 `~/app/`. Set your real domain in the `Caddyfile`.
+
+(`scripts/generate-prod-env.sh --vps` generates the same values locally if you'd rather
+not type a heredoc over SSH — but then you're copying secrets from your machine to the
+VM instead of generating them in place, which is the less safe direction. The heredoc
+above stays the recommended path for this appendix; the script exists mainly for the
+Railway path in §3, where there's no VM to SSH into at all.)
 
 ### A.6. First deploy and TLS
 

@@ -5,6 +5,3 @@ packages:
 onlyBuiltDependencies:
   - argon2
   - esbuild
-allowBuilds:
-  argon2: set this to true or false
-  esbuild: set this to true or false
