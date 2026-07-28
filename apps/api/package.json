@@ -13,6 +13,7 @@
     "db:seed": "tsx src/db/scripts/seed.ts"
   },
   "dependencies": {
+    "@fastify/static": "^8.2.0",
     "@machi2/shared": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",

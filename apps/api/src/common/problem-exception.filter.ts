@@ -9,6 +9,7 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { renderNotFoundPage } from './not-found-page';
+import { readSpaIndexHtml } from './spa';
 
 type ProblemBody = {
   code: string;
@@ -78,7 +79,8 @@ export class ProblemExceptionFilter implements ExceptionFilter {
       const request = http.getRequest<FastifyRequest>();
 
       if (status === HttpStatus.NOT_FOUND && this.wantsNotFoundPage(request)) {
-        reply.status(status).type('text/html; charset=utf-8').send(renderNotFoundPage());
+        const html = readSpaIndexHtml() ?? renderNotFoundPage();
+        reply.status(status).type('text/html; charset=utf-8').send(html);
         return;
       }
 

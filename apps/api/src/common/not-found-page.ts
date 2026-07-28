@@ -1,8 +1,9 @@
 /**
- * Minimal HTML shown when a browser asks for a non-`/api` path.
- *
- * Temporary: once the API serves the built SPA via `@fastify/static`
- * (ROADMAP M8), the SPA fallback owns these paths and this goes away.
+ * Minimal HTML shown when a browser asks for a non-`/api` path and the SPA hasn't
+ * been built (`apps/web/dist` missing — see common/spa.ts). Normal production
+ * deploys never hit this: `ProblemExceptionFilter` serves the real SPA `index.html`
+ * instead once it exists. This is only what API-only setups (e.g. `pnpm dev:api`
+ * run alone, without ever building `apps/web`) fall back to.
  * Deliberately unstyled beyond `color-scheme` — it cannot reach the
  * design tokens, so it must not invent colours of its own (CLAUDE.md §2).
  */
