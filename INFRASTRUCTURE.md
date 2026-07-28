@@ -381,6 +381,7 @@ somehow grows past that, something's off; see `ARCHITECTURE.md`'s migration trig
 | App suddenly cold-starts, SSE connections drop      | `sleepApplication` got reset to `true` — check `railway.json` / service settings                          |
 | Unexpected Railway bill                            | The hard spending limit didn't hold, or the Cloudflare rate-limit rule wasn't actually applied — check both, and the reconciliation loop's last run |
 | Backup workflow fails silently                     | `DATABASE_PUBLIC_URL` secret is stale, or the Postgres service's public networking got disabled            |
+| Build fails inside `pnpm i --frozen-lockfile` — `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING` or `packages field missing or empty` | Nixpacks doesn't support pnpm 11 yet (confirmed open bug, railwayapp/nixpacks#1419) — pin `packageManager` in the root `package.json` to a pnpm 10.x release instead (`corepack use pnpm@10`, then commit the regenerated `pnpm-lock.yaml`) |
 
 ---
 
