@@ -75,6 +75,7 @@ function useAdminAuth(): AdminAuth {
 
 export function AdminApp() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const me = useQuery({
     queryKey: ['admin', 'me'],
     queryFn: api.fetchMe,
@@ -101,6 +102,9 @@ export function AdminApp() {
   }
 
   const onLogout = () => {
+    // Drop the deep admin path before the login screen renders, so the URL bar
+    // never keeps pointing at a screen the signed-out user can no longer see.
+    navigate('/admin', { replace: true });
     void api.logout(me.data.csrfToken).finally(() => {
       queryClient.setQueryData(['admin', 'me'], null);
       queryClient.removeQueries({ queryKey: ['admin'] });
