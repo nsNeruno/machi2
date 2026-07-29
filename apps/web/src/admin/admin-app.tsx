@@ -7,7 +7,16 @@ import {
   type ReactNode,
 } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import {
+  Link,
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+} from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
@@ -63,6 +72,44 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Something went wrong.';
 }
 
+const LOGIN_PATH = '/admin/login';
+const AFTER_LOGIN_PATH = '/admin/locations';
+
+/**
+ * Where an open redirect would otherwise live. Only same-origin admin paths are
+ * allowed back out of the `redirect` param, and never the login screen itself.
+ */
+function safeRedirect(raw: string | null): string {
+  if (!raw) {
+    return AFTER_LOGIN_PATH;
+  }
+  let url: URL;
+  try {
+    url = new URL(raw, window.location.origin);
+  } catch {
+    return AFTER_LOGIN_PATH;
+  }
+  if (url.origin !== window.location.origin) {
+    return AFTER_LOGIN_PATH;
+  }
+  if (url.pathname !== '/admin' && !url.pathname.startsWith('/admin/')) {
+    return AFTER_LOGIN_PATH;
+  }
+  if (url.pathname === LOGIN_PATH) {
+    return AFTER_LOGIN_PATH;
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/** The login URL that remembers where a signed-out visitor was heading. */
+function loginPathFor(pathname: string, search: string): string {
+  const next = `${pathname}${search}`;
+  if (pathname === '/admin' || pathname === '/admin/') {
+    return LOGIN_PATH;
+  }
+  return `${LOGIN_PATH}?redirect=${encodeURIComponent(next)}`;
+}
+
 type AdminAuth = { me: AdminMeResponse; onLogout: () => void };
 const AdminAuthContext = createContext<AdminAuth | null>(null);
 function useAdminAuth(): AdminAuth {
@@ -76,6 +123,7 @@ function useAdminAuth(): AdminAuth {
 export function AdminApp() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
   const me = useQuery({
     queryKey: ['admin', 'me'],
     queryFn: api.fetchMe,
@@ -98,15 +146,31 @@ export function AdminApp() {
         </AdminSplash>
       );
     }
+  }
+
+  const atLogin = location.pathname === LOGIN_PATH;
+
+  if (me.isError || !me.data) {
+    // Signed out: move the URL to the login screen rather than rendering it under
+    // a deep admin path, and carry that path along so login can land back on it.
+    if (!atLogin) {
+      return <Navigate replace to={loginPathFor(location.pathname, location.search)} />;
+    }
     return <AdminLogin onSuccess={(data) => queryClient.setQueryData(['admin', 'me'], data)} />;
   }
 
+  if (atLogin) {
+    return <Navigate replace to={safeRedirect(new URLSearchParams(location.search).get('redirect'))} />;
+  }
+
   const onLogout = () => {
-    // Drop the deep admin path before the login screen renders, so the URL bar
-    // never keeps pointing at a screen the signed-out user can no longer see.
-    navigate('/admin', { replace: true });
-    void api.logout(me.data.csrfToken).finally(() => {
-      queryClient.setQueryData(['admin', 'me'], null);
+    const csrfToken = me.data.csrfToken;
+    // Drop the session and the deep admin path in the same render, so the URL bar
+    // never keeps pointing at a screen the signed-out user can no longer see — and
+    // so the still-authenticated shell doesn't bounce straight back off /admin/login.
+    queryClient.setQueryData(['admin', 'me'], null);
+    navigate(LOGIN_PATH, { replace: true });
+    void api.logout(csrfToken).finally(() => {
       queryClient.removeQueries({ queryKey: ['admin'] });
       void me.refetch();
     });
