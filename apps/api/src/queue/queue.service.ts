@@ -2,9 +2,11 @@ import { Injectable } from '@nestjs/common';
 import type {
   CompleteQueueEntryResponse,
   EnqueueResponse,
+  LocationPosition,
   QueueBoardResponse,
   QueueScope,
 } from '@machi2/shared';
+import { MAX_LOCATION_ACCURACY_METERS } from '@machi2/shared';
 import { and, eq } from 'drizzle-orm';
 
 import type { DeviceActor } from '../common/device-token.service';
@@ -26,7 +28,7 @@ export class QueueService {
 
   async enqueue(
     gameId: string,
-    input: { displayName: string; autoRequeue: boolean },
+    input: { displayName: string; autoRequeue: boolean; position?: LocationPosition },
     actor: DeviceActor,
     idempotencyKey: string,
   ): Promise<EnqueueResponse> {
@@ -47,6 +49,7 @@ export class QueueService {
       reason: 'played' | 'left' | 'skipped' | 'other';
       actingName?: string;
       staffPin?: string;
+      position?: LocationPosition;
     },
     actor: DeviceActor,
     idempotencyKey: string,
@@ -82,6 +85,16 @@ export class QueueService {
       locationTimezone: context.location.timezone,
       boardMode: context.game.boardMode,
       requireApprovalForOthers: context.location.requireApprovalForOthers,
+      locationValidation:
+        context.location.latitude === null || context.location.longitude === null
+          ? { required: false }
+          : {
+              required: true,
+              latitude: context.location.latitude,
+              longitude: context.location.longitude,
+              radiusMeters: context.location.locationValidationRadiusMeters,
+              maxAccuracyMeters: MAX_LOCATION_ACCURACY_METERS,
+            },
       communityNote:
         context.game.communityNoteVisible && context.game.communityNote
           ? {

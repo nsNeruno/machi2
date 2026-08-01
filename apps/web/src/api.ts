@@ -9,6 +9,7 @@ import {
   type CompleteQueueEntryResponse,
   type EnqueueResponse,
   type LocationDetailResponse,
+  type LocationPosition,
   type LocationSummaryResponse,
   type LocationStreamEvent,
   type QueueBoardResponse,
@@ -33,6 +34,7 @@ type RequestOptions = {
 
 type ApiProblem = {
   code?: string;
+  details?: unknown;
   message?: string;
 };
 
@@ -42,12 +44,19 @@ type ResponseSchema<T> = {
 
 export class ApiError extends Error {
   readonly code: string | null;
+  readonly details: unknown;
   readonly status: number | null;
 
-  constructor(message: string, code: string | null = null, status: number | null = null) {
+  constructor(
+    message: string,
+    code: string | null = null,
+    status: number | null = null,
+    details?: unknown,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
+    this.details = details;
     this.status = status;
   }
 }
@@ -101,6 +110,7 @@ async function request<T>(
       problem?.message ?? `Request failed (${response.status}).`,
       problem?.code ?? null,
       response.status,
+      problem?.details,
     );
   }
 
@@ -139,7 +149,7 @@ export function fetchQueueBoard(
 
 export function enqueueGame(
   gameId: string,
-  input: { displayName: string; autoRequeue: boolean },
+  input: { displayName: string; autoRequeue: boolean; position?: LocationPosition },
   device: DeviceIdentity,
 ): Promise<EnqueueResponse> {
   return request(`/api/games/${encodeURIComponent(gameId)}/queue`, enqueueResponseSchema, device, {
@@ -155,6 +165,7 @@ export function completeQueueEntry(
     reason: 'played' | 'left' | 'skipped' | 'other';
     actingName: string;
     staffPin?: string;
+    position?: LocationPosition;
   },
   device: DeviceIdentity,
 ): Promise<CompleteQueueEntryResponse> {

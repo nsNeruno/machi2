@@ -46,7 +46,11 @@ export class QueueEventsService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly dbService: DbService,
     private readonly serviceDateService: ServiceDateService,
-  ) {}
+  ) {
+    // Popular boards legitimately exceed Node's default ten-listener warning threshold;
+    // actual stream capacity is governed per IP by reserveStream().
+    this.eventEmitter.setMaxListeners(0);
+  }
 
   async onModuleInit(): Promise<void> {
     await this.rememberCurrentServiceDates();
@@ -65,7 +69,11 @@ export class QueueEventsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  stream(gameId: string, ip: string, options: { enforceLimit?: boolean } = {}): Observable<MessageEvent> {
+  stream(
+    gameId: string,
+    ip: string,
+    options: { enforceLimit?: boolean } = {},
+  ): Observable<MessageEvent> {
     const enforceLimit = options.enforceLimit ?? true;
     if (enforceLimit) {
       this.reserveStream(ip);
@@ -133,6 +141,37 @@ export class QueueEventsService implements OnModuleInit, OnModuleDestroy {
     this.eventEmitter.emit(this.locationEventName(target.locationId), {
       type: 'location-updated',
       locationId: target.locationId,
+      occurredAt: new Date().toISOString(),
+    } satisfies LocationStreamSignal);
+  }
+
+  async publishLocationConfigurationChanged(locationId: string): Promise<void> {
+    const [location] = await this.dbService.db
+      .select({ id: locations.id, timezone: locations.timezone })
+      .from(locations)
+      .where(eq(locations.id, locationId))
+      .limit(1);
+    if (!location) {
+      return;
+    }
+
+    const serviceDate = this.serviceDateService.current(location.timezone);
+    const locationGames = await this.dbService.db
+      .select({ id: games.id })
+      .from(games)
+      .where(eq(games.locationId, locationId));
+
+    for (const game of locationGames) {
+      this.publish(game.id, {
+        type: 'queue-updated',
+        gameId: game.id,
+        serviceDate,
+        occurredAt: new Date().toISOString(),
+      });
+    }
+    this.eventEmitter.emit(this.locationEventName(locationId), {
+      type: 'location-updated',
+      locationId,
       occurredAt: new Date().toISOString(),
     } satisfies LocationStreamSignal);
   }

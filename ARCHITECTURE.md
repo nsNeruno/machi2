@@ -83,6 +83,9 @@ locations (
   name          text,
   address       text null,
   timezone      text,                 -- IANA, e.g. 'Asia/Jakarta'
+  latitude      double precision null,
+  longitude     double precision null, -- both null = location validation off
+  location_validation_radius_meters int default 5,
   is_active     boolean default true,
   staff_pin_hash text null,           -- argon2, set only when approval is required
   require_approval_for_others boolean default false, -- off = open board (UI_DESIGN §7.5)
@@ -161,20 +164,34 @@ GET  /api/locations                          list active locations
 GET  /api/locations/:slug                    location + its games + per-game waitingCount
 GET  /api/games/:id/queue?scope=recent|all   today's queue (recent=latest 10; default recent)
 GET  /api/games/:id/stream                   SSE: queue-updated, day-rollover
-POST /api/games/:id/queue                    enqueue { displayName, autoRequeue? }
-POST /api/queue-entries/:id/done             { reason, actingName?, staffPin? }
+POST /api/games/:id/queue                    enqueue { displayName, autoRequeue?, position? }
+POST /api/queue-entries/:id/done             { reason, actingName?, staffPin?, position? }
 ```
 
 Public writes require an `Idempotency-Key` and `X-Device-Token` UUID. The server returns
 an HMAC-derived `X-Device-Proof`; clients send it with later requests using the same
 token. The raw token and its HMAC hash are never returned in API bodies.
 
+When a location has both coordinates, every public queue write also requires
+`position: { latitude, longitude, accuracyMeters }`. The server requires accuracy of
+20 metres or better and the reported coordinate's centre to be within that location's
+configurable radius (default 5 metres). Missing, inaccurate, and outside readings return
+typed 403 problems. The check runs after an idempotency replay lookup, so a successful
+replay never needs a new reading and a failed check leaves no idempotency record or queue
+mutation. Public staff-PIN actions are included; authenticated admin endpoints are
+exempt. Browser coordinates are self-reported and spoofable, so this is a proximity
+deterrent rather than cryptographic authorization. Player coordinates are never stored,
+logged, broadcast, or copied into idempotency responses.
+
 Public read DTOs carry UI-driven derived fields (see `UI_DESIGN.md` §9): each queue entry
 includes `mine: boolean` (request device-token hash matches the entry's), `createdAt`,
 `doneAt`, a derived `doneByRole` label, `doneByName` (self-asserted, display only) and
 `roundNumber` for the meta line (§7.7), and the board payload includes `requireApprovalForOthers: boolean` (the per-location approval flag,
-default false = open board), `boardMode` (`self_serve | now_playing`), and the visible
-community note. Raw device-token hashes (`device_token_hash`, `done_by_token_hash`) are
+default false = open board), `boardMode` (`self_serve | now_playing`), the visible
+community note, and a discriminated `locationValidation` policy. That policy is disabled
+when coordinates are absent; otherwise it carries the venue coordinates, configured
+radius, and 20-metre accuracy limit used by the board precheck. Raw device-token hashes
+(`device_token_hash`, `done_by_token_hash`) are
 never sent to clients, and the payload never reveals whether a staff PIN exists when
 approval is off.
 
@@ -255,12 +272,12 @@ contract below is what keeps switching back, or to any of them, a same-day opera
 
 Start on the primary, stay portable, move when the pain is real — not before.
 
-| Phase             | Where                               | Cost               | Move when                                                       |
-| ----------------- | ------------------------------------ | ------------------- | ---------------------------------------------------------------- |
-| **1. Now (primary)** | Railway, Hobby plan               | **$5/mo minimum usage** | —                                                             |
-| **2a. Fallback**  | Oracle Cloud Always Free, Singapore | $0                  | You want to eliminate the monthly cost and accept ARM capacity/account-stability risk |
-| **2b. Fallback**  | Render, Singapore                   | $13/mo fixed        | You want an SLA and predictable fixed billing                    |
-| **3. Fallback**   | Paid VPS (Biznet Gio / DO / Vultr)  | $4–9/mo             | You want to stay self-hosted without free-tier or metered-billing risk |
+| Phase                | Where                               | Cost                    | Move when                                                                             |
+| -------------------- | ----------------------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
+| **1. Now (primary)** | Railway, Hobby plan                 | **$5/mo minimum usage** | —                                                                                     |
+| **2a. Fallback**     | Oracle Cloud Always Free, Singapore | $0                      | You want to eliminate the monthly cost and accept ARM capacity/account-stability risk |
+| **2b. Fallback**     | Render, Singapore                   | $13/mo fixed            | You want an SLA and predictable fixed billing                                         |
+| **3. Fallback**      | Paid VPS (Biznet Gio / DO / Vultr)  | $4–9/mo                 | You want to stay self-hosted without free-tier or metered-billing risk                |
 
 Every phase runs **the same application code**. This is not four architectures; it is
 one architecture with four landlords. Section [Portability
@@ -407,14 +424,14 @@ change would break one, it needs an explicit decision, not a silent commit.
 Move when one of these is true. Not before — cost is not the only currency, and
 migrating early spends attention you'd rather put into the product.
 
-| Signal                                                                    | Go to                                      |
-| --------------------------------------------------------------------------- | ------------------------------------------ |
-| You want to eliminate the $5/mo floor entirely and accept ARM capacity/account risk | **Oracle Always Free**                     |
-| Railway's metered bill grows uncomfortably (spike or sustained) despite the cost governor | **Render** (fixed $13/mo) or **paid VPS**  |
-| You want a vendor SLA and predictable fixed billing                         | **Render**                                 |
-| You want full self-hosted control, minus a free-tier account's risk         | **Paid VPS**                               |
-| Sustained load exceeds one instance                                        | Render Pro / Railway Pro + `LISTEN/NOTIFY` |
-| Migrated to Oracle and it then reclaims the instance, or capacity vanishes on resize | Back to **Railway**, or **Render**, or **paid VPS** |
+| Signal                                                                                    | Go to                                               |
+| ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| You want to eliminate the $5/mo floor entirely and accept ARM capacity/account risk       | **Oracle Always Free**                              |
+| Railway's metered bill grows uncomfortably (spike or sustained) despite the cost governor | **Render** (fixed $13/mo) or **paid VPS**           |
+| You want a vendor SLA and predictable fixed billing                                       | **Render**                                          |
+| You want full self-hosted control, minus a free-tier account's risk                       | **Paid VPS**                                        |
+| Sustained load exceeds one instance                                                       | Render Pro / Railway Pro + `LISTEN/NOTIFY`          |
+| Migrated to Oracle and it then reclaims the instance, or capacity vanishes on resize      | Back to **Railway**, or **Render**, or **paid VPS** |
 
 ---
 
@@ -643,16 +660,16 @@ the cheapest option in the table.
 **Sizing** (NEO Lite tier, standard SSD — verified against biznetgio.com/pricelist#neo-lite,
 July 2026; re-check before committing, prices and promo codes rotate):
 
-| Package | vCPU | RAM  | Storage | Price/mo             |
-| ------- | ---- | ---- | ------- | --------------------- |
-| XS 1.1  | 1    | 1 GB | 60 GB   | Rp59,000 (~$4)         |
-| SS 2.2  | 2    | 2 GB | 60 GB   | Rp109,000 (~$7)        |
-| MS 4.2  | 2    | 4 GB | 60 GB   | Rp139,000 (~$9)        |
+| Package | vCPU | RAM  | Storage | Price/mo        |
+| ------- | ---- | ---- | ------- | --------------- |
+| XS 1.1  | 1    | 1 GB | 60 GB   | Rp59,000 (~$4)  |
+| SS 2.2  | 2    | 2 GB | 60 GB   | Rp109,000 (~$7) |
+| MS 4.2  | 2    | 4 GB | 60 GB   | Rp139,000 (~$9) |
 
 **Avoid `XS 1.1` for a starter deploy** — it's tighter than it looks, and tighter than
 Oracle's own `E2.1.Micro` stopgap (Appendix A.2a in `INFRASTRUCTURE.md`). That Oracle
-fallback is *two* separate 1 GB VMs (Postgres on one, API + Caddy on the other); `XS 1.1`
-would put all three containers on *one* 1 GB box via the same `docker compose` file.
+fallback is _two_ separate 1 GB VMs (Postgres on one, API + Caddy on the other); `XS 1.1`
+would put all three containers on _one_ 1 GB box via the same `docker compose` file.
 Rough memory floor before a single user ever hits the site: Ubuntu 24.04 + Docker daemon
 (~200-300 MB), Postgres 16 idle (~100-150 MB minimum with any usable `shared_buffers`),
 the NestJS/Fastify process (~80-150 MB), Caddy (~20-40 MB) — 400-650 MB gone before
@@ -680,7 +697,7 @@ need re-checking, not re-deriving:
 
 - **Firewall:** NEO Lite ships its own **Security Group** panel (Biznet Gio's own name
   for the same concept as Oracle's security list) plus built-in Anti-DDoS — open 80/443
-  there. Whether the instance *also* ships a local `iptables`/`ufw` rule blocking those
+  there. Whether the instance _also_ ships a local `iptables`/`ufw` rule blocking those
   ports in addition (Oracle's "open it twice" trap) isn't guaranteed one way or the
   other; run `sudo iptables -L INPUT --line-numbers` on first login and only run the
   Oracle appendix's `iptables` procedure if it's actually blocking.
@@ -763,8 +780,8 @@ the DB layer, the realtime layer, and the hosting model simultaneously — the s
 exit" shape as Cloudflare Durable Objects, just arrived at from a different direction.
 
 **Supabase** is a partial exception worth naming precisely because it's Postgres
-underneath — Drizzle works against it unmodified via a plain `DATABASE_URL`, *as long
-as* only the Postgres piece is used and Supabase's client SDK, Auth, Storage, and
+underneath — Drizzle works against it unmodified via a plain `DATABASE_URL`, _as long
+as_ only the Postgres piece is used and Supabase's client SDK, Auth, Storage, and
 Realtime features are left alone. Reaching for Supabase Realtime reintroduces the same
 SSE-vs-WebSocket conflict as Firebase; Supabase Auth doesn't fit the existing
 `admin_users`/session model. Even used narrowly as managed Postgres, it doesn't replace
@@ -796,12 +813,12 @@ no active payment method for consumption — the platform degrades or reclaims r
 instead of charging. That's worth knowing as the reason to migrate there if metered risk
 ever becomes unacceptable, but it isn't the default anymore.
 
-| Target                            | Can a spike cost money?                             | What a spike actually threatens                  |
-| ---------------------------------- | ---------------------------------------------------- | ------------------------------------------------- |
-| Railway (primary)                 | **Yes — metered, and the "hard" cap is imperfect**  | Real, uncapped-in-practice overage               |
-| Render                             | Only bandwidth overage ($0.15/GB); compute is fixed | A degraded but bounded bill                      |
-| Oracle Always Free (no PAYG)      | No                                                   | OOM / CPU saturation / idle-or-abuse reclamation |
-| Oracle upgraded to Pay-As-You-Go  | Yes, beyond free limits                             | Egress + compute overage                         |
+| Target                           | Can a spike cost money?                             | What a spike actually threatens                  |
+| -------------------------------- | --------------------------------------------------- | ------------------------------------------------ |
+| Railway (primary)                | **Yes — metered, and the "hard" cap is imperfect**  | Real, uncapped-in-practice overage               |
+| Render                           | Only bandwidth overage ($0.15/GB); compute is fixed | A degraded but bounded bill                      |
+| Oracle Always Free (no PAYG)     | No                                                  | OOM / CPU saturation / idle-or-abuse reclamation |
+| Oracle upgraded to Pay-As-You-Go | Yes, beyond free limits                             | Egress + compute overage                         |
 
 Given Railway is the chosen primary, the single most effective cost control left as a
 pure deployment decision is which fallback to keep documented and ready: Oracle Always

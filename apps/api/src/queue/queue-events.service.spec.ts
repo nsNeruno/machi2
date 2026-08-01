@@ -2,6 +2,7 @@ import { HttpException, type MessageEvent } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ServiceDateService } from '../common/service-date.service';
+import { getEnvironment } from '../config/environment';
 import type { DbService } from '../db/db.service';
 import { QueueEventsService } from './queue-events.service';
 
@@ -42,9 +43,9 @@ describe('QueueEventsService', () => {
     subscription.unsubscribe();
   });
 
-  it('caps a network at three simultaneous streams and releases capacity on unsubscribe', () => {
+  it('caps a network at the configured stream limit and releases capacity on unsubscribe', () => {
     const service = createService();
-    const subscriptions = Array.from({ length: 3 }, () =>
+    const subscriptions = Array.from({ length: getEnvironment().maxStreamsPerIp }, () =>
       service.stream(gameId, '203.0.113.11').subscribe(),
     );
 

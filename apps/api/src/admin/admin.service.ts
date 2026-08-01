@@ -25,13 +25,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { ServiceDateService } from '../common/service-date.service';
 import { DbService } from '../db/db.service';
-import {
-  adminLocationGrants,
-  adminUsers,
-  games,
-  locations,
-  queueEntries,
-} from '../db/schema';
+import { adminLocationGrants, adminUsers, games, locations, queueEntries } from '../db/schema';
 import { toQueueEntryResponse } from '../queue/queue-entry.presenter';
 import { QueueEventsService } from '../queue/queue-events.service';
 import { AdminAuthService } from './admin-auth.service';
@@ -117,6 +111,9 @@ export class AdminService {
         name: locations.name,
         address: locations.address,
         timezone: locations.timezone,
+        latitude: locations.latitude,
+        longitude: locations.longitude,
+        locationValidationRadiusMeters: locations.locationValidationRadiusMeters,
         isActive: locations.isActive,
         requireApprovalForOthers: locations.requireApprovalForOthers,
         staffPinHash: locations.staffPinHash,
@@ -133,7 +130,9 @@ export class AdminService {
 
   async createLocation(input: AdminLocationCreateInput): Promise<AdminLocationResponse> {
     await this.assertSlugFree(input.slug, null);
-    const staffPinHash = input.staffPin ? await argon2.hash(input.staffPin, { type: argon2.argon2id }) : null;
+    const staffPinHash = input.staffPin
+      ? await argon2.hash(input.staffPin, { type: argon2.argon2id })
+      : null;
 
     const [created] = await this.dbService.db
       .insert(locations)
@@ -143,13 +142,19 @@ export class AdminService {
         name: input.name,
         address: input.address ?? null,
         timezone: input.timezone,
+        latitude: input.latitude ?? null,
+        longitude: input.longitude ?? null,
+        locationValidationRadiusMeters: input.locationValidationRadiusMeters,
         isActive: input.isActive,
         requireApprovalForOthers: input.requireApprovalForOthers,
         staffPinHash,
       })
       .returning();
     if (!created) {
-      throw new ConflictException({ code: 'location_create_failed', message: 'Could not create location.' });
+      throw new ConflictException({
+        code: 'location_create_failed',
+        message: 'Could not create location.',
+      });
     }
     return { ...this.toLocationResponse({ ...created, gameCount: 0 }) };
   }
@@ -187,6 +192,10 @@ export class AdminService {
         slug: input.slug ?? existing.slug,
         address: input.address === undefined ? existing.address : input.address,
         timezone: input.timezone ?? existing.timezone,
+        latitude: input.latitude === undefined ? existing.latitude : input.latitude,
+        longitude: input.longitude === undefined ? existing.longitude : input.longitude,
+        locationValidationRadiusMeters:
+          input.locationValidationRadiusMeters ?? existing.locationValidationRadiusMeters,
         isActive: input.isActive ?? existing.isActive,
         requireApprovalForOthers: requireApproval,
         staffPinHash,
@@ -196,6 +205,7 @@ export class AdminService {
     if (!updated) {
       throw new NotFoundException({ code: 'location_not_found', message: 'Location not found.' });
     }
+    await this.queueEventsService.publishLocationConfigurationChanged(locationId);
     const [gameCountRow] = await this.dbService.db
       .select({ value: sql<number>`count(*)`.mapWith(Number) })
       .from(games)
@@ -266,7 +276,10 @@ export class AdminService {
       })
       .returning();
     if (!created) {
-      throw new ConflictException({ code: 'game_create_failed', message: 'Could not create game.' });
+      throw new ConflictException({
+        code: 'game_create_failed',
+        message: 'Could not create game.',
+      });
     }
     return this.toGameResponse(created, null);
   }
@@ -301,7 +314,11 @@ export class AdminService {
     this.publishForGame(game);
   }
 
-  async reorderGames(admin: AuthenticatedAdmin, locationId: string, order: string[]): Promise<void> {
+  async reorderGames(
+    admin: AuthenticatedAdmin,
+    locationId: string,
+    order: string[],
+  ): Promise<void> {
     await this.assertLocationAccess(admin, locationId);
     const existing = await this.dbService.db
       .select({ id: games.id })
@@ -373,18 +390,33 @@ export class AdminService {
       serviceDate,
       locationTimezone: location.timezone,
       boardMode: game.boardMode,
-      entries: rows.map((entry) => toQueueEntryResponse(entry, undefined, rounds.get(entry.id) ?? 1)),
+      entries: rows.map((entry) =>
+        toQueueEntryResponse(entry, undefined, rounds.get(entry.id) ?? 1),
+      ),
     };
   }
 
-  async markEntryDone(admin: AuthenticatedAdmin, entryId: string, reason: DoneReason): Promise<void> {
+  async markEntryDone(
+    admin: AuthenticatedAdmin,
+    entryId: string,
+    reason: DoneReason,
+  ): Promise<void> {
     const entry = await this.entryForAdmin(admin, entryId);
     if (entry.status !== 'waiting') {
-      throw new ConflictException({ code: 'entry_already_done', message: 'Entry is already done.' });
+      throw new ConflictException({
+        code: 'entry_already_done',
+        message: 'Entry is already done.',
+      });
     }
     await this.dbService.db
       .update(queueEntries)
-      .set({ status: 'done', doneReason: reason, doneAt: new Date(), doneByRole: 'admin', doneByName: null })
+      .set({
+        status: 'done',
+        doneReason: reason,
+        doneAt: new Date(),
+        doneByRole: 'admin',
+        doneByName: null,
+      })
       .where(eq(queueEntries.id, entryId));
     this.publishForEntry(entry);
   }
@@ -420,7 +452,10 @@ export class AdminService {
       .where(eq(queueEntries.id, entryId))
       .limit(1);
     if (!entry) {
-      throw new NotFoundException({ code: 'queue_entry_not_found', message: 'Queue entry not found.' });
+      throw new NotFoundException({
+        code: 'queue_entry_not_found',
+        message: 'Queue entry not found.',
+      });
     }
     await this.assertLocationAccess(admin, entry.locationId);
     return entry;
@@ -449,7 +484,10 @@ export class AdminService {
       .where(eq(adminUsers.email, input.email))
       .limit(1);
     if (existing) {
-      throw new ConflictException({ code: 'email_taken', message: 'That email is already in use.' });
+      throw new ConflictException({
+        code: 'email_taken',
+        message: 'That email is already in use.',
+      });
     }
     const passwordHash = await this.authService.hashPassword(input.password);
     const userId = uuidv7();
@@ -583,7 +621,10 @@ export class AdminService {
       .where(eq(adminUsers.id, userId))
       .limit(1);
     if (!user) {
-      throw new NotFoundException({ code: 'admin_user_not_found', message: 'Admin user not found.' });
+      throw new NotFoundException({
+        code: 'admin_user_not_found',
+        message: 'Admin user not found.',
+      });
     }
     return user;
   }
@@ -616,7 +657,10 @@ export class AdminService {
   }
 
   private publishForEntry(entry: typeof queueEntries.$inferSelect): void {
-    void this.publishForGameAsync({ id: entry.gameId, locationId: entry.locationId } as typeof games.$inferSelect);
+    void this.publishForGameAsync({
+      id: entry.gameId,
+      locationId: entry.locationId,
+    } as typeof games.$inferSelect);
   }
 
   private toLocationResponse(row: {
@@ -625,6 +669,9 @@ export class AdminService {
     name: string;
     address: string | null;
     timezone: string;
+    latitude: number | null;
+    longitude: number | null;
+    locationValidationRadiusMeters: number;
     isActive: boolean;
     requireApprovalForOthers: boolean;
     staffPinHash: string | null;
@@ -636,6 +683,9 @@ export class AdminService {
       name: row.name,
       address: row.address,
       timezone: row.timezone,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      locationValidationRadiusMeters: row.locationValidationRadiusMeters,
       isActive: row.isActive,
       requireApprovalForOthers: row.requireApprovalForOthers,
       hasStaffPin: row.staffPinHash !== null,

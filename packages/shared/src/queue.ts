@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { locationPositionSchema, locationValidationResponseSchema } from './location';
 import { nameSchema } from './name';
 
 export const queueStatusSchema = z.enum(['waiting', 'done']);
@@ -45,12 +46,14 @@ export type LocationDetailResponse = z.infer<typeof locationDetailResponseSchema
 export const enqueueQueueSchema = z.object({
   displayName: nameSchema,
   autoRequeue: z.boolean().default(false),
+  position: locationPositionSchema.optional(),
 });
 
 export const completeQueueEntrySchema = z.object({
   reason: doneReasonSchema,
   actingName: nameSchema.optional(),
   staffPin: z.string().min(1).max(128).optional(),
+  position: locationPositionSchema.optional(),
 });
 
 export const queueEntryResponseSchema = z.object({
@@ -80,6 +83,7 @@ export const queueBoardResponseSchema = z.object({
   locationTimezone: z.string(),
   boardMode: boardModeSchema,
   requireApprovalForOthers: z.boolean(),
+  locationValidation: locationValidationResponseSchema,
   communityNote: z
     .object({
       body: z.string(),

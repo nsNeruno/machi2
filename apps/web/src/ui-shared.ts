@@ -68,8 +68,18 @@ const FRIENDLY_ERROR_BY_CODE: Record<string, string> = {
   database_unavailable: 'The queue service is briefly unreachable. Try again shortly.',
 };
 
+const LOCATION_VALIDATION_CODES = new Set([
+  'location_verification_required',
+  'location_too_inaccurate',
+  'outside_location_range',
+]);
+
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    const locationMessage = locationProblemMessage(error);
+    if (locationMessage) {
+      return locationMessage;
+    }
     const friendly = error.code ? FRIENDLY_ERROR_BY_CODE[error.code] : undefined;
     if (friendly) {
       return friendly;
@@ -84,6 +94,61 @@ export function errorMessage(error: unknown): string {
     return error.message;
   }
   return error instanceof Error ? error.message : 'The queue could not be updated.';
+}
+
+export function isLocationValidationError(error: unknown): error is ApiError {
+  return (
+    error instanceof ApiError &&
+    error.code !== null &&
+    LOCATION_VALIDATION_CODES.has(error.code)
+  );
+}
+
+function locationProblemMessage(error: ApiError): string | null {
+  const details = problemDetails(error.details);
+  switch (error.code) {
+    case 'location_verification_required': {
+      const radius = detailNumber(details, 'radiusMeters');
+      return radius === undefined
+        ? 'Check your location before updating this queue, then try again.'
+        : `Check your location from within ${Math.round(radius)} m of the venue, then try again.`;
+    }
+    case 'location_too_inaccurate': {
+      const accuracy = detailNumber(details, 'accuracyMeters');
+      const limit = detailNumber(details, 'maxAccuracyMeters');
+      if (accuracy !== undefined && limit !== undefined) {
+        return `Your location reading was accurate to about ±${Math.round(accuracy)} m; ${Math.round(limit)} m or better is required. Turn on Precise Location, then check again.`;
+      }
+      return 'Your location reading was not precise enough. Turn on Precise Location, then check again.';
+    }
+    case 'outside_location_range': {
+      const distance = detailNumber(details, 'distanceMeters');
+      const radius = detailNumber(details, 'radiusMeters');
+      if (distance !== undefined && radius !== undefined) {
+        return `You appeared about ${formatProblemDistance(distance)} from the venue. Move within ${Math.round(radius)} m, then check again.`;
+      }
+      return 'You appear to be outside the venue’s update range. Move closer, then check again.';
+    }
+    default:
+      return null;
+  }
+}
+
+function problemDetails(details: unknown): Record<string, unknown> | null {
+  return typeof details === 'object' && details !== null
+    ? (details as Record<string, unknown>)
+    : null;
+}
+
+function detailNumber(details: Record<string, unknown> | null, key: string): number | undefined {
+  const value = details?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function formatProblemDistance(distanceMeters: number): string {
+  return distanceMeters >= 1_000
+    ? `${(distanceMeters / 1_000).toFixed(1)} km`
+    : `${Math.round(distanceMeters)} m`;
 }
 
 export function formatServiceDate(serviceDate: string): string {

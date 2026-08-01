@@ -63,6 +63,7 @@ export function OnboardingDialog({ local }: { local: LocalStateController }) {
 export function JoinDialog({
   activeCard,
   cards,
+  isCheckingLocation,
   isSubmitting,
   onClose,
   onSelectCard,
@@ -70,6 +71,7 @@ export function JoinDialog({
 }: {
   activeCard: NameCard | null;
   cards: NameCard[];
+  isCheckingLocation: boolean;
   isSubmitting: boolean;
   onClose: () => void;
   onSelectCard: (card: NameCard) => void;
@@ -154,9 +156,13 @@ export function JoinDialog({
             <button className="secondary-button" onClick={onClose} type="button">
               Cancel
             </button>
-            <button className="primary-button" disabled={isSubmitting} type="submit">
+            <button
+              className="primary-button"
+              disabled={isCheckingLocation || isSubmitting}
+              type="submit"
+            >
               <Ticket aria-hidden="true" />
-              {isSubmitting ? 'Joining' : 'Add to queue'}
+              {isCheckingLocation ? 'Checking location' : isSubmitting ? 'Joining' : 'Add to queue'}
             </button>
           </div>
         </form>
@@ -167,12 +173,14 @@ export function JoinDialog({
 
 export function DoneReasonDialog({
   entry,
+  isCheckingLocation,
   isSubmitting,
   needsStaffPin,
   onClose,
   onSubmit,
 }: {
   entry: QueueEntryResponse;
+  isCheckingLocation: boolean;
   isSubmitting: boolean;
   needsStaffPin: boolean;
   onClose: () => void;
@@ -222,11 +230,16 @@ export function DoneReasonDialog({
           </label>
         ) : null}
         {error ? <p className="field-error">{error}</p> : null}
+        {isCheckingLocation ? (
+          <p aria-live="polite" className="dialog-status">
+            Checking your location before updating the queue…
+          </p>
+        ) : null}
         <div className="reason-grid">
           {doneReasons.map((detail) => (
             <button
               className={`reason-button is-${detail.reason}`}
-              disabled={isSubmitting}
+              disabled={isCheckingLocation || isSubmitting}
               key={detail.reason}
               onClick={() => submit(detail.reason)}
               type="button"

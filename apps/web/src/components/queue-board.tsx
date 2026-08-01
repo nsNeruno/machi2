@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -14,11 +14,13 @@ import { Link, useParams } from 'react-router-dom';
 import type {
   DoneReason,
   LocationDetailResponse,
+  LocationPosition,
   QueueBoardResponse,
   QueueEntryResponse,
 } from '@machi2/shared';
 
 import {
+  ApiError,
   completeQueueEntry,
   enqueueGame,
   fetchQueueBoard,
@@ -26,10 +28,12 @@ import {
   type DeviceIdentity,
 } from '../api';
 import type { LocalStateController, NameCard } from '../local-state';
+import { useLocationValidation } from '../location-validation';
 import { formatQueueTime } from '../time';
 import { createUuid } from '../uuid';
 import {
   errorMessage,
+  isLocationValidationError,
   useMediaQuery,
   useNowTick,
   useScrolledPast,
@@ -40,6 +44,7 @@ import {
 import { FloatingBoardControls } from './queue-controls';
 import { DoneReasonDialog, JoinDialog } from './dialogs';
 import { EmptyQueue, ErrorPage, LoadingPage } from './feedback';
+import { LocationCheckCard } from './location-check';
 import {
   DraggableJoinCard,
   EntryCollection,
@@ -71,6 +76,7 @@ export function QueueBoard({
   const [joinOpen, setJoinOpen] = useState(false);
   const [reasonEntry, setReasonEntry] = useState<QueueEntryResponse | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const locationCardRef = useRef<HTMLElement>(null);
   const [heroSentinelRef, headerPinned] = useScrolledPast();
   const boardKey = useMemo(() => ['queue-board', gameId] as const, [gameId]);
   const board = useQuery({
@@ -79,6 +85,38 @@ export function QueueBoard({
     enabled: Boolean(gameId),
     refetchOnWindowFocus: false,
   });
+  const locationValidation = board.data?.locationValidation ?? ({ required: false } as const);
+  const locationCheck = useLocationValidation(locationValidation);
+
+  const revealLocationCard = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      locationCardRef.current?.scrollIntoView({ block: 'center' });
+      locationCardRef.current?.focus({ preventScroll: true });
+    });
+  }, []);
+
+  const verifyLocationForWrite = useCallback(async () => {
+    setActionError(null);
+    const result = await locationCheck.check();
+    if (!result.allowed) {
+      revealLocationCard();
+    }
+    return result;
+  }, [locationCheck.check, revealLocationCard]);
+
+  const reportLocationWriteError = useCallback(
+    (error: unknown): boolean => {
+      if (!isLocationValidationError(error) || !(error instanceof ApiError)) {
+        return false;
+      }
+      locationCheck.reportProblem({ code: error.code, details: error.details });
+      setJoinOpen(false);
+      setReasonEntry(null);
+      revealLocationCard();
+      return true;
+    },
+    [locationCheck.reportProblem, revealLocationCard],
+  );
 
   const updateGameCount = useCallback(
     (nextBoard: QueueBoardResponse) => {
@@ -124,8 +162,11 @@ export function QueueBoard({
   }, [onServiceDateChange, serviceDate]);
 
   const enqueue = useMutation({
-    mutationFn: (input: { displayName: string; autoRequeue: boolean }) =>
-      enqueueGame(gameId, input, device),
+    mutationFn: (input: {
+      displayName: string;
+      autoRequeue: boolean;
+      position?: LocationPosition;
+    }) => enqueueGame(gameId, input, device),
     onMutate: async (input) => {
       const previous = queryClient.getQueryData<QueueBoardResponse>(boardKey);
       if (!previous) {
@@ -173,17 +214,24 @@ export function QueueBoard({
         updateGameCount(context.previous);
       }
       setActionError(errorMessage(error));
+      reportLocationWriteError(error);
     },
   });
 
   const complete = useMutation({
-    mutationFn: (input: { entry: QueueEntryResponse; reason: DoneReason; staffPin?: string }) =>
+    mutationFn: (input: {
+      entry: QueueEntryResponse;
+      reason: DoneReason;
+      staffPin?: string;
+      position?: LocationPosition;
+    }) =>
       completeQueueEntry(
         input.entry.id,
         {
           actingName: local.activeCard?.name ?? '',
           reason: input.reason,
           staffPin: input.staffPin,
+          position: input.position,
         },
         device,
       ),
@@ -246,6 +294,7 @@ export function QueueBoard({
         updateGameCount(context.previous);
       }
       setActionError(errorMessage(error));
+      reportLocationWriteError(error);
     },
   });
 
@@ -277,31 +326,46 @@ export function QueueBoard({
   );
   const orderedEntries =
     local.state.prefs.boardOrder === 'as_added'
-      ? applyDirection(
-          local.state.prefs.showFullDayByDefault ? allEntries : allEntries.slice(-10),
-        )
+      ? applyDirection(local.state.prefs.showFullDayByDefault ? allEntries : allEntries.slice(-10))
       : [];
   const ownWaitingEntry = waitingEntries.find((entry) => entry.mine) ?? null;
 
-  const handleJoin = (name: string, autoRequeue: boolean) => {
+  const handleJoin = async (name: string, autoRequeue: boolean) => {
+    const locationResult = await verifyLocationForWrite();
+    if (!locationResult.allowed) {
+      setJoinOpen(false);
+      return;
+    }
     local.saveCard(name, autoRequeue);
-    enqueue.mutate({ displayName: name, autoRequeue });
+    enqueue.mutate({
+      displayName: name,
+      autoRequeue,
+      position: locationResult.position,
+    });
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     if (event.over?.id !== 'queue-drop') {
       return;
     }
     const data = event.active.data.current as { card?: NameCard } | undefined;
     const card = data?.card;
-    if (!card || enqueue.isPending || ownWaitingEntry) {
+    if (
+      !card ||
+      enqueue.isPending ||
+      locationCheck.state.status === 'checking' ||
+      ownWaitingEntry
+    ) {
       return;
     }
     local.selectCard(card.id);
-    handleJoin(card.name, card.autoRequeueDefault);
+    await handleJoin(card.name, card.autoRequeueDefault);
   };
 
-  const beginCompletion = (entry: QueueEntryResponse) => {
+  const beginCompletion = async (entry: QueueEntryResponse) => {
+    if (complete.isPending || locationCheck.state.status === 'checking') {
+      return;
+    }
     if (!local.activeCard) {
       setActionError('Choose a name card before changing a queue entry.');
       onOpenCards();
@@ -309,10 +373,31 @@ export function QueueBoard({
     }
     const isHead = waitingEntries[0]?.id === entry.id;
     if (entry.mine && isHead && board.data.boardMode === 'self_serve') {
-      complete.mutate({ entry, reason: 'played' });
+      const locationResult = await verifyLocationForWrite();
+      if (!locationResult.allowed) {
+        return;
+      }
+      complete.mutate({ entry, reason: 'played', position: locationResult.position });
       return;
     }
     setReasonEntry(entry);
+  };
+
+  const submitCompletion = async (reason: DoneReason, staffPin?: string) => {
+    if (!reasonEntry || complete.isPending || locationCheck.state.status === 'checking') {
+      return;
+    }
+    const locationResult = await verifyLocationForWrite();
+    if (!locationResult.allowed) {
+      setReasonEntry(null);
+      return;
+    }
+    complete.mutate({
+      entry: reasonEntry,
+      reason,
+      staffPin,
+      position: locationResult.position,
+    });
   };
 
   // The board pieces are declared once and arranged two ways: a single stacked column on
@@ -356,6 +441,18 @@ export function QueueBoard({
         ) : null}
       </div>
     </aside>
+  ) : null;
+
+  const locationCheckCard = board.data.locationValidation.required ? (
+    <LocationCheckCard
+      onCheck={() => {
+        setActionError(null);
+        void locationCheck.check();
+      }}
+      ref={locationCardRef}
+      state={locationCheck.state}
+      validation={board.data.locationValidation}
+    />
   ) : null;
 
   const nowPlayingCard =
@@ -461,7 +558,7 @@ export function QueueBoard({
   );
 
   return (
-    <DndContext onDragEnd={handleDragEnd}>
+    <DndContext onDragEnd={(event) => void handleDragEnd(event)}>
       <div
         className={`queue-sticky-bar${headerPinned ? ' is-pinned' : ''}`}
         aria-hidden={!headerPinned}
@@ -509,6 +606,7 @@ export function QueueBoard({
               <div className="queue-rail">
                 {heroSection}
                 {communityNoteCard}
+                {locationCheckCard}
                 {integrityNotice}
                 <div className="rail-join">
                   {actionBar}
@@ -523,6 +621,7 @@ export function QueueBoard({
             <div ref={heroSentinelRef} aria-hidden="true" />
             {actionErrorBanner}
             {communityNoteCard}
+            {locationCheckCard}
             {nowPlayingCard}
             {queueSection}
             {statusLegend}
@@ -553,19 +652,21 @@ export function QueueBoard({
         <JoinDialog
           activeCard={local.activeCard}
           cards={local.state.cards}
+          isCheckingLocation={locationCheck.state.status === 'checking'}
           isSubmitting={enqueue.isPending}
           onClose={() => setJoinOpen(false)}
           onSelectCard={(card) => local.selectCard(card.id)}
-          onSubmit={handleJoin}
+          onSubmit={(name, autoRequeue) => void handleJoin(name, autoRequeue)}
         />
       ) : null}
       {reasonEntry ? (
         <DoneReasonDialog
           entry={reasonEntry}
+          isCheckingLocation={locationCheck.state.status === 'checking'}
           isSubmitting={complete.isPending}
           needsStaffPin={board.data.requireApprovalForOthers && !reasonEntry.mine}
           onClose={() => setReasonEntry(null)}
-          onSubmit={(reason, staffPin) => complete.mutate({ entry: reasonEntry, reason, staffPin })}
+          onSubmit={(reason, staffPin) => void submitCompletion(reason, staffPin)}
         />
       ) : null}
     </DndContext>

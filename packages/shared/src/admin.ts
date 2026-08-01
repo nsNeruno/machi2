@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+import {
+  DEFAULT_LOCATION_VALIDATION_RADIUS_METERS,
+  latitudeSchema,
+  locationValidationRadiusSchema,
+  longitudeSchema,
+} from './location';
 import { nameSchema } from './name';
 import { boardModeSchema, doneReasonSchema, queueEntryResponseSchema } from './queue';
 
@@ -83,6 +89,9 @@ export const adminLocationResponseSchema = z.object({
   name: z.string(),
   address: z.string().nullable(),
   timezone: z.string(),
+  latitude: latitudeSchema.nullable(),
+  longitude: longitudeSchema.nullable(),
+  locationValidationRadiusMeters: locationValidationRadiusSchema,
   isActive: z.boolean(),
   requireApprovalForOthers: z.boolean(),
   hasStaffPin: z.boolean(),
@@ -98,6 +107,11 @@ export const adminLocationCreateSchema = z
     slug: slugSchema,
     address: addressSchema,
     timezone: timezoneSchema,
+    latitude: latitudeSchema.optional().nullable(),
+    longitude: longitudeSchema.optional().nullable(),
+    locationValidationRadiusMeters: locationValidationRadiusSchema.default(
+      DEFAULT_LOCATION_VALIDATION_RADIUS_METERS,
+    ),
     isActive: z.boolean().default(true),
     requireApprovalForOthers: z.boolean().default(false),
     staffPin: staffPinSchema.optional(),
@@ -105,20 +119,43 @@ export const adminLocationCreateSchema = z
   .refine((value) => !value.requireApprovalForOthers || Boolean(value.staffPin), {
     message: 'A staff PIN is required when approval is on',
     path: ['staffPin'],
+  })
+  .refine((value) => coordinatesArePaired(value.latitude, value.longitude), {
+    message: 'Enter both latitude and longitude, or leave both blank',
+    path: ['latitude'],
   });
 export type AdminLocationCreateInput = z.infer<typeof adminLocationCreateSchema>;
 
-export const adminLocationUpdateSchema = z.object({
-  name: locationNameSchema.optional(),
-  slug: slugSchema.optional(),
-  address: addressSchema,
-  timezone: timezoneSchema.optional(),
-  isActive: z.boolean().optional(),
-  requireApprovalForOthers: z.boolean().optional(),
-  // Empty string clears the PIN; omitted leaves it unchanged; a value replaces it.
-  staffPin: z.union([staffPinSchema, z.literal('')]).optional(),
-});
+export const adminLocationUpdateSchema = z
+  .object({
+    name: locationNameSchema.optional(),
+    slug: slugSchema.optional(),
+    address: addressSchema,
+    timezone: timezoneSchema.optional(),
+    latitude: latitudeSchema.optional().nullable(),
+    longitude: longitudeSchema.optional().nullable(),
+    locationValidationRadiusMeters: locationValidationRadiusSchema.optional(),
+    isActive: z.boolean().optional(),
+    requireApprovalForOthers: z.boolean().optional(),
+    // Empty string clears the PIN; omitted leaves it unchanged; a value replaces it.
+    staffPin: z.union([staffPinSchema, z.literal('')]).optional(),
+  })
+  .refine((value) => coordinatesArePaired(value.latitude, value.longitude), {
+    message: 'Enter both latitude and longitude, or leave both blank',
+    path: ['latitude'],
+  });
 export type AdminLocationUpdateInput = z.infer<typeof adminLocationUpdateSchema>;
+
+function coordinatesArePaired(
+  latitude: number | null | undefined,
+  longitude: number | null | undefined,
+): boolean {
+  return (
+    (latitude === undefined && longitude === undefined) ||
+    (latitude === null && longitude === null) ||
+    (typeof latitude === 'number' && typeof longitude === 'number')
+  );
+}
 
 export const slugAvailabilityResponseSchema = z.object({
   slug: z.string(),

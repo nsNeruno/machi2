@@ -2,6 +2,7 @@ import type {
   CompleteQueueEntryResponse,
   DoneReason,
   EnqueueResponse,
+  LocationPosition,
   QueueScope,
 } from '@machi2/shared';
 
@@ -14,6 +15,7 @@ export type EnqueueInput = {
   autoRequeue: boolean;
   actor: DeviceActor;
   idempotencyKey: string;
+  position?: LocationPosition;
 };
 
 export type CompleteInput = {
@@ -22,6 +24,7 @@ export type CompleteInput = {
   staffPin?: string;
   actor: DeviceActor;
   idempotencyKey: string;
+  position?: LocationPosition;
 };
 
 export interface QueueStrategy {
