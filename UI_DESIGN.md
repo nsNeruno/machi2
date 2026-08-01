@@ -99,25 +99,25 @@ the shape later. None of it is sent to the server except where noted.
 // key: "arcadeq.v1"
 interface LocalState {
   version: 1;
-  deviceToken: string;          // UUIDv4, generated once; sent as a header, HMAC-checked
-                                // server-side. The ONLY field that touches the network.
-  cards: NameCard[];            // the user's saved "name cards" — at least one required to act
+  deviceToken: string; // UUIDv4, generated once; sent as a header, HMAC-checked
+  // server-side. The ONLY field that touches the network.
+  cards: NameCard[]; // the user's saved "name cards" — at least one required to act
   prefs: {
-    activeCardId: string | null;  // the card the device is currently "acting as" (§4a)
-    boardLayout: 'list' | 'table' | 'checklist' | 'cards';  // per-device, default 'list'
-    boardOrder: 'up_next' | 'as_added';                      // arrangement, default 'up_next' (§7.1b)
-    showFullDayByDefault: boolean;                           // default false
-    reduceMotion: boolean | 'system';                        // default 'system'
+    activeCardId: string | null; // the card the device is currently "acting as" (§4a)
+    boardLayout: 'list' | 'table' | 'checklist' | 'cards'; // per-device, default 'list'
+    boardOrder: 'up_next' | 'as_added'; // arrangement, default 'up_next' (§7.1b)
+    showFullDayByDefault: boolean; // default false
+    reduceMotion: boolean | 'system'; // default 'system'
   };
 }
 
 interface NameCard {
-  id: string;          // local uuid
-  name: string;        // validated per §5, max 8 graphemes
-  colorSeed: number;   // derived from name → stable hue, so a name always looks the same
+  id: string; // local uuid
+  name: string; // validated per §5, max 8 graphemes
+  colorSeed: number; // derived from name → stable hue, so a name always looks the same
   autoRequeueDefault: boolean; // pre-fills the "re-join after I play" checkbox (§7.4a)
   createdAt: string;
-  lastUsedAt: string;  // for sorting most-recent-first
+  lastUsedAt: string; // for sorting most-recent-first
 }
 ```
 
@@ -134,7 +134,7 @@ least one name card and a selected **active card**. Two consequences:
 
 - **First-run onboarding (§6.0).** On first use, before the board is usable, the device
   is asked to create one name card. This is a one-time, one-field step, not an account.
-  *Viewing* a board read-only is not hard-blocked, but the first action prompts card
+  _Viewing_ a board read-only is not hard-blocked, but the first action prompts card
   creation if somehow none exists (e.g. storage was cleared).
 - **Active card = "who I'm acting as."** With multiple cards, one is active at a time. The
   active card's name is what gets attached to this device's actions and shown in the audit
@@ -176,11 +176,12 @@ export function graphemeLength(s: string): number {
   return [...seg.segment(s)].length;
 }
 
-export const nameSchema = z.string()
+export const nameSchema = z
+  .string()
   .transform(normalizeName)
-  .refine(s => s.length > 0, 'Enter a name')
-  .refine(s => ALLOWED.test(s), 'Only letters, numbers, and common symbols')
-  .refine(s => graphemeLength(s) <= 8, 'Max 8 characters');
+  .refine((s) => s.length > 0, 'Enter a name')
+  .refine((s) => ALLOWED.test(s), 'Only letters, numbers, and common symbols')
+  .refine((s) => graphemeLength(s) <= 8, 'Max 8 characters');
 ```
 
 Notes for the build:
@@ -222,7 +223,7 @@ line of honesty about what it is.
 └───────────────────────────────┘
 ```
 
-- One field, one button. This is the *only* gate; after it, the device always has a card
+- One field, one button. This is the _only_ gate; after it, the device always has a card
   and is never asked again unless storage is cleared.
 - Read-only viewing isn't hard-blocked — the gate is on acting. In practice onboarding
   runs at first app open, so a real user has a card before they reach a board.
@@ -326,7 +327,7 @@ flow is:
 
 1. A player joins the queue.
 2. When their turn comes, they mark **themselves** as playing — their entry crosses out.
-   That single act *is* the completion; nothing has to be cleared afterward.
+   That single act _is_ the completion; nothing has to be cleared afterward.
 
 The top waiting entry is implicitly "up next" and gets a subtle emphasis, but it is a
 normal row, not a special slot. Because finishing and clearing are the same action, the
@@ -392,7 +393,7 @@ promotes the next entry.
 
 ### 7.1b Board order — "up next" vs "as added" (remembered per device)
 
-A toggle that controls how entries are *arranged*, independent of the layout (§7.3,
+A toggle that controls how entries are _arranged_, independent of the layout (§7.3,
 density) and the full-day (scope) toggles. Stored in `prefs.boardOrder`, default
 `up_next`.
 
@@ -401,7 +402,7 @@ density) and the full-day (scope) toggles. Stored in `prefs.boardOrder`, default
   divider (and hidden until "show full day"). This is the mockups you've seen.
 - **As added.** Strict **insertion order** — entries appear in the exact sequence they
   joined (ticket number ascending), with **no status grouping and no up-next pull-out**. A
-  played entry stays struck through *in its original position* rather than moving. The
+  played entry stays struck through _in its original position_ rather than moving. The
   board reads like a running log, so you can see the true interleaving — who has already
   gone versus who is still waiting, in order — and judge your real position relative to
   everyone, not just the people still in line.
@@ -447,7 +448,7 @@ board stops hugging the centre of a large display, **without** demoting the queu
   thumb zone. While scrolling a long list, the compact pinned top bar (which carries its
   own Join button) keeps the action reachable.
 
-This is a rearrangement of the *same* elements, not a different screen (§1). Nothing is
+This is a rearrangement of the _same_ elements, not a different screen (§1). Nothing is
 added or removed across the breakpoint — the mobile stack and the wide split render the
 identical set of pieces, so the queue is never reduced to one tile in a symmetric grid.
 The floating board-controls button (§7.3) becomes a stationary corner FAB at this width.
@@ -473,12 +474,12 @@ Four done reasons, each a shape + word + color triple (from the `done_reason` en
 `self_serve` mode, a player marking their own turn complete is the common path and maps
 to **played** — it's the prominent default in the picker, with the others one tap away:
 
-| Reason | Icon | Word | Hue role | Meaning |
-|---|---|---|---|---|
-| played | ✓ | Played | positive / green | Took their turn |
-| left | ⊘ | Left | neutral / slate | Withdrew before playing |
-| skipped | » | Skipped | caution / amber | Passed over (absent when called) |
-| other | • | Other | info / violet | Anything else |
+| Reason  | Icon | Word    | Hue role         | Meaning                          |
+| ------- | ---- | ------- | ---------------- | -------------------------------- |
+| played  | ✓    | Played  | positive / green | Took their turn                  |
+| left    | ⊘    | Left    | neutral / slate  | Withdrew before playing          |
+| skipped | »    | Skipped | caution / amber  | Passed over (absent when called) |
+| other   | •    | Other   | info / violet    | Anything else                    |
 
 The legend is visible whenever any done entry is on screen. Exact hexes are set at build
 time from the palette in §10; the constraint is that the four must be distinguishable in
@@ -505,6 +506,7 @@ Choice persists in `prefs.boardLayout`. No backend involvement.
 Two ways in, both ending in the same enqueue call:
 
 **A. Dialog form (baseline).**
+
 ```
 ┌─────────────────────────┐
 │ Join the queue          │
@@ -519,6 +521,7 @@ Two ways in, both ending in the same enqueue call:
 │      [ Add to queue ]   │   active-voice button; produces a "Joined" toast
 └─────────────────────────┘
 ```
+
 Submitting enqueues the name **and** saves it as a name card if it's new. Typing a name
 that already exists as a card enqueues without creating a duplicate (matched on the
 normalized name). The button carries an `Idempotency-Key` so a double-tap can't double-join.
@@ -557,7 +560,7 @@ Exact behavior:
   re-queue is skipped and the entry simply completes (surfaced as a small "line was full,
   not re-joined" toast if the acting user is the owner). It is **exempt from the manual
   re-join cooldown** — that cooldown exists to stop spam re-joining, and this is a single
-  deliberate opt-in, not spam. The tighter open-board cap on marking *others'* entries
+  deliberate opt-in, not spam. The tighter open-board cap on marking _others'_ entries
   (§7.5a) still applies to the completion action itself.
 - **Remembered per card.** The checkbox's last state is stored as the name card's default
   (`autoRequeueDefault`, §4), so a regular sets it once and it pre-fills next time. Still
@@ -580,6 +583,7 @@ be frictionless, since making it tedious is the whole problem we're solving. A s
 
 **Marking any entry via the picker.** Swiping or tapping the check on any entry (or using
 the "…" on your own for a non-default reason) opens:
+
 ```
 ┌─────────────────────────┐
 │ Mark #13 小明 as done   │
@@ -618,7 +622,7 @@ gesture.
 
 With approval off, throttling is what keeps an open board honest against rapid
 manipulation. Beyond the standard `done` rate limit (`ARCHITECTURE.md` §6), an open board
-adds a tighter **per-device cap on marking *others'* entries** in a short window, so one
+adds a tighter **per-device cap on marking _others'_ entries** in a short window, so one
 device can't sweep the board. Hitting it shows a friendly "you're doing that a lot — give
 it a moment" message, not a hard error. Marking your own entry is not subject to the
 tighter cap.
@@ -632,6 +636,30 @@ unfairly." It's informational, dismissible per session but re-shown next visit, 
 covers the queue. It disappears entirely when approval is on, because the PIN is doing
 that job instead. The wording follows the copy guidance: direct, no scolding, no
 exclamation marks.
+
+### 7.5c Location validation for public changes
+
+Locations with an admin-specified latitude/longitude require proximity validation before
+every public join or mark-done action, including staff-PIN actions. Locations without
+coordinates behave exactly as before. Authenticated actions in the admin console are
+always exempt, and the queue remains readable regardless of location permission.
+
+The board requests a high-accuracy position when it loads, with a 15-second timeout and
+at most a 30-second browser-cached reading. A compact status card appears near the board
+context on mobile and in the wide-screen info rail. It reports checking, confirmed,
+permission blocked, unavailable, timed out, unsupported/insecure browser, insufficient
+accuracy, and outside-range states. Every non-checking state includes **Check again**;
+permission changes and returning to the foreground re-run the check where supported.
+Blocked queue actions focus the card rather than silently disabling controls.
+
+Every actual mutation obtains another reading. The reported centre must fall within the
+location's configured radius (default 5 metres) and browser accuracy must be 20 metres or
+better; accuracy never expands the allowed radius. Dialog join, drag-to-join, one-tap
+"I'm up", reason-picker completion, and staff-PIN completion all use the same gate. No
+optimistic queue update begins before the local check succeeds, and the API independently
+enforces the same rule. Player coordinates are transient and never saved locally or on
+the server. They are browser-supplied and can be spoofed, so the feature is an on-site
+guardrail rather than strong identity or authorization.
 
 ### 7.6 Community note
 
@@ -666,20 +694,20 @@ What's recorded and shown:
 - **Done time and actor.** A completed entry shows when it was marked and by whom.
 
 **Who "who" is — a self-asserted name plus a role.** There are no accounts, so
-attribution can't be *proven*. Since acting now requires an active name card (§4a), the
+attribution can't be _proven_. Since acting now requires an active name card (§4a), the
 meta line shows that card's **name** for player actions — useful and human-readable — but
 it is self-asserted, so it's paired with a role that says how the action was authorized:
 
-| Meta line shows | Meaning | How it's derived |
-|---|---|---|
-| self | The entry's own device marked its own entry | acting device-token hash == entry's |
-| by ‹name› | A different device marked it (open board), shown as its active card name | hashes differ, no staff/admin auth |
-| staff | Marked via the location staff PIN | PIN-authenticated completion |
-| admin | Marked from the admin console | authenticated admin session |
+| Meta line shows | Meaning                                                                  | How it's derived                    |
+| --------------- | ------------------------------------------------------------------------ | ----------------------------------- |
+| self            | The entry's own device marked its own entry                              | acting device-token hash == entry's |
+| by ‹name›       | A different device marked it (open board), shown as its active card name | hashes differ, no staff/admin auth  |
+| staff           | Marked via the location staff PIN                                        | PIN-authenticated completion        |
+| admin           | Marked from the admin console                                            | authenticated admin session         |
 
 For a self-completion the name is redundant with the entry, so it reads "self"; for
 someone else's action the claimed name is the informative part. The underlying acting
-device-token hash *is* stored server-side for moderation and backtracking (§9) and is the
+device-token hash _is_ stored server-side for moderation and backtracking (§9) and is the
 only trustworthy key — the displayed name is never used for authorization and should not
 be trusted in a dispute. Names are already public on the board, so showing them here leaks
 nothing new. Because the whole queue is purged on the 7-day cleanup (`ARCHITECTURE.md`
@@ -712,16 +740,16 @@ spec.
 
 Two roles (schema: `admin_users.role` + `admin_location_grants`):
 
-| Capability | superadmin | operator |
-|---|---|---|
-| Log in / manage own session | ✓ | ✓ |
-| See & edit **all** locations | ✓ | — |
-| See & edit **granted** locations only | ✓ | ✓ (their grants) |
-| Create/edit/delete locations | ✓ | — |
-| Edit games, community notes, board mode | ✓ | ✓ (granted) |
-| Toggle approval + set staff PIN | ✓ | ✓ (granted) |
-| View live queue, mark entries, clear queue | ✓ | ✓ (granted) |
-| Manage admin users & grants | ✓ | — |
+| Capability                                 | superadmin | operator         |
+| ------------------------------------------ | ---------- | ---------------- |
+| Log in / manage own session                | ✓          | ✓                |
+| See & edit **all** locations               | ✓          | —                |
+| See & edit **granted** locations only      | ✓          | ✓ (their grants) |
+| Create/edit/delete locations               | ✓          | —                |
+| Edit games, community notes, board mode    | ✓          | ✓ (granted)      |
+| Toggle approval + set staff PIN            | ✓          | ✓ (granted)      |
+| View live queue, mark entries, clear queue | ✓          | ✓ (granted)      |
+| Manage admin users & grants                | ✓          | —                |
 
 Every admin API call is authorized server-side against the session's role and grants; the
 UI hides what a role can't do, but hiding is never the security boundary — the server is.
@@ -755,15 +783,17 @@ the side list collapses into a menu.
 List of locations (all for superadmin, granted for operator), each row showing name,
 timezone, active state, and game count. Create/edit opens a form:
 
-| Field | Notes |
-|---|---|
-| Name | required |
-| Slug | URL-safe; auto-suggested from name, editable, uniqueness-checked live |
-| Address | optional |
-| Timezone | **IANA picker (required)** — drives the daily reset; searchable, defaults to the browser's zone as a guess. This is the single most consequential field; label it clearly. |
-| Active | toggle; inactive locations still resolve but show as closed publicly |
+| Field                       | Notes                                                                                                                                                                                                               |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Name                        | required                                                                                                                                                                                                            |
+| Slug                        | URL-safe; auto-suggested from name, editable, uniqueness-checked live                                                                                                                                               |
+| Address                     | optional                                                                                                                                                                                                            |
+| Timezone                    | **IANA picker (required)** — drives the daily reset; searchable, defaults to the browser's zone as a guess. This is the single most consequential field; label it clearly.                                          |
+| Latitude / longitude        | optional numeric pair; entering both enables public-write location validation, clearing both disables it                                                                                                            |
+| Location check radius       | positive whole metres, default 5; only applies when coordinates are present                                                                                                                                         |
+| Active                      | toggle; inactive locations still resolve but show as closed publicly                                                                                                                                                |
 | Require approval for others | toggle (`require_approval_for_others`, default off). Turning it on reveals the staff-PIN field and requires a PIN; a helper line explains this hides the public integrity notice and gates marking others' entries. |
-| Staff PIN | shown only when approval is on; set/replace, never displayed back (write-only, argon2). |
+| Staff PIN                   | shown only when approval is on; set/replace, never displayed back (write-only, argon2).                                                                                                                             |
 
 Create/delete are superadmin-only; operators edit within their granted locations. Deleting
 a location is a destructive action behind a typed confirmation (its games and today's queue
@@ -773,15 +803,15 @@ go with it).
 
 Games for the selected location, reorderable (`sort_order`). Each game's editor:
 
-| Field | Notes |
-|---|---|
-| Name | required |
-| Cabinet label | optional; distinguishes duplicate cabinets ("Cabinet 2") |
-| Queue strategy | shown but **locked to `simple_fifo`** for now — visible so the seam is discoverable, disabled so nobody expects more yet |
-| Board mode | `self_serve` (default) or `now_playing` (§7.0), with a one-line description of each so staff understand the trade |
-| Max queue length | optional integer; blank = unbounded |
-| Active | toggle; inactive games are dimmed and unjoinable publicly |
-| Community note | textarea + visible/hidden toggle + auto-stamped "last updated {time} by {admin}". Plain text, no rich formatting — it's an operational note, not a CMS. Hidden or empty notes don't render publicly. |
+| Field            | Notes                                                                                                                                                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Name             | required                                                                                                                                                                                             |
+| Cabinet label    | optional; distinguishes duplicate cabinets ("Cabinet 2")                                                                                                                                             |
+| Queue strategy   | shown but **locked to `simple_fifo`** for now — visible so the seam is discoverable, disabled so nobody expects more yet                                                                             |
+| Board mode       | `self_serve` (default) or `now_playing` (§7.0), with a one-line description of each so staff understand the trade                                                                                    |
+| Max queue length | optional integer; blank = unbounded                                                                                                                                                                  |
+| Active           | toggle; inactive games are dimmed and unjoinable publicly                                                                                                                                            |
+| Community note   | textarea + visible/hidden toggle + auto-stamped "last updated {time} by {admin}". Plain text, no rich formatting — it's an operational note, not a CMS. Hidden or empty notes don't render publicly. |
 
 ### 8.5 Live queue — `/admin/locations/:id/queue`
 
@@ -862,6 +892,16 @@ the per-location approval flag (default `false` = open board); combined with eac
 whether a clear step exists. Neither reveals whether a staff PIN exists when approval is
 off.
 
+**Optional location-gated public writes.** Add nullable latitude/longitude and a positive
+`location_validation_radius_meters` (default 5) to `locations`; a database constraint
+requires coordinates as a pair. The board payload exposes `{ required: false }` or the
+enabled venue coordinates, radius, and 20-metre accuracy limit. Enqueue and public done
+inputs accept an optional position. When coordinates exist, the queue strategy validates
+accuracy and strict centre distance after idempotency replay detection but before any new
+mutation. Stable 403 codes distinguish missing, inaccurate, and outside readings. Admin
+queue endpoints do not accept or require a position, and player positions are never
+persisted.
+
 **Read scope parameter.** `GET /api/games/:id/queue?scope=recent|all` (default `recent` =
 latest 10). Both scopes are location-local-service-date filtered. Queues are small, so no
 pagination.
@@ -890,7 +930,7 @@ replay behavior from `ARCHITECTURE.md` §6 covers double-tap and drag-drop-twice
 
 ## 10. Aesthetic direction (starting point, validated at build)
 
-This section is the aesthetic *thesis* in prose; the concrete, editable tokens (exact
+This section is the aesthetic _thesis_ in prose; the concrete, editable tokens (exact
 hexes, type scale, spacing, motion, component recipes) live in `DESIGN_SYSTEM.md`. Keep
 the two in sync — this explains the intent, that file is the source of truth for values.
 
@@ -899,7 +939,7 @@ entry is a ticket, and the board is a modern take-a-number counter crossed with 
 arcade high-score table.** The name card is literally a ticket you keep in a wallet.
 
 Proposed compact token system — to be confirmed against the `frontend-design` skill when
-components are built, and deliberately *not* the AI-default cream/serif/terracotta,
+components are built, and deliberately _not_ the AI-default cream/serif/terracotta,
 black/acid-green, or broadsheet looks:
 
 - **Palette (5):** a deep cabinet-ink base for the board surface, a warm marquee-amber
@@ -921,7 +961,7 @@ black/acid-green, or broadsheet looks:
   there and keep the rest disciplined.
 - **Motion:** restrained. A new entry slides in; a done entry strikes through and settles.
   A day-rollover clears the board with one deliberate sweep. Respect `prefers-reduced-
-  motion` (and the local `reduceMotion` pref) throughout. No ambient decoration.
+motion` (and the local `reduceMotion` pref) throughout. No ambient decoration.
 
 ---
 

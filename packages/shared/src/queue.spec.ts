@@ -52,6 +52,7 @@ describe('queueStreamEventSchema', () => {
           locationTimezone: 'Asia/Jakarta',
           boardMode: 'self_serve',
           requireApprovalForOthers: false,
+          locationValidation: { required: false },
           communityNote: null,
           entries: [],
         },

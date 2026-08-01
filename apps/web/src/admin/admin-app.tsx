@@ -57,15 +57,23 @@ const doneReasons: Array<{ reason: DoneReason; label: string }> = [
 
 const timezones: string[] = (() => {
   try {
-    const supported = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] })
-      .supportedValuesOf?.('timeZone');
+    const supported = (
+      Intl as unknown as { supportedValuesOf?: (k: string) => string[] }
+    ).supportedValuesOf?.('timeZone');
     if (supported && supported.length > 0) {
       return supported;
     }
   } catch {
     // fall through to a small default set
   }
-  return ['Asia/Jakarta', 'Asia/Tokyo', 'Asia/Singapore', 'Europe/London', 'America/New_York', 'UTC'];
+  return [
+    'Asia/Jakarta',
+    'Asia/Tokyo',
+    'Asia/Singapore',
+    'Europe/London',
+    'America/New_York',
+    'UTC',
+  ];
 })();
 
 function errorMessage(error: unknown): string {
@@ -160,7 +168,9 @@ export function AdminApp() {
   }
 
   if (atLogin) {
-    return <Navigate replace to={safeRedirect(new URLSearchParams(location.search).get('redirect'))} />;
+    return (
+      <Navigate replace to={safeRedirect(new URLSearchParams(location.search).get('redirect'))} />
+    );
   }
 
   const onLogout = () => {
@@ -256,7 +266,11 @@ function AdminShell() {
         </nav>
         <div className="admin-account">
           {me.role === 'superadmin' ? (
-            <button className="secondary-button compact" onClick={() => setMaintenanceOpen(true)} type="button">
+            <button
+              className="secondary-button compact"
+              onClick={() => setMaintenanceOpen(true)}
+              type="button"
+            >
               <Activity aria-hidden="true" /> Load
             </button>
           ) : null}
@@ -272,7 +286,10 @@ function AdminShell() {
         <Route element={<LocationsScreen />} path="/admin/locations" />
         <Route element={<GamesScreen />} path="/admin/locations/:id/games" />
         <Route element={<QueueScreen />} path="/admin/locations/:id/queue" />
-        <Route element={me.role === 'superadmin' ? <UsersScreen /> : <Forbidden />} path="/admin/users" />
+        <Route
+          element={me.role === 'superadmin' ? <UsersScreen /> : <Forbidden />}
+          path="/admin/users"
+        />
         <Route element={<Forbidden />} path="*" />
       </Routes>
     </div>
@@ -320,15 +337,32 @@ function LocationsScreen() {
               </span>
               <span>{location.timezone}</span>
               <span>{location.gameCount}</span>
-              <span>{location.isActive ? 'Active' : 'Closed'}</span>
+              <span>
+                {location.isActive ? 'Active' : 'Closed'}
+                <small>
+                  {location.latitude === null
+                    ? 'Location check off'
+                    : `Location check · ${location.locationValidationRadiusMeters} m`}
+                </small>
+              </span>
               <span className="admin-row-actions">
-                <Link className="secondary-button compact" to={`/admin/locations/${location.id}/games`}>
+                <Link
+                  className="secondary-button compact"
+                  to={`/admin/locations/${location.id}/games`}
+                >
                   Games
                 </Link>
-                <Link className="secondary-button compact" to={`/admin/locations/${location.id}/queue`}>
+                <Link
+                  className="secondary-button compact"
+                  to={`/admin/locations/${location.id}/queue`}
+                >
                   Queue
                 </Link>
-                <button className="secondary-button compact" onClick={() => setEditing(location)} type="button">
+                <button
+                  className="secondary-button compact"
+                  onClick={() => setEditing(location)}
+                  type="button"
+                >
                   Edit
                 </button>
               </span>
@@ -365,11 +399,22 @@ function LocationDialog({
   const [timezone, setTimezone] = useState(
     location?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
+  const [latitude, setLatitude] = useState(location?.latitude?.toString() ?? '');
+  const [longitude, setLongitude] = useState(location?.longitude?.toString() ?? '');
+  const [locationRadius, setLocationRadius] = useState(
+    String(location?.locationValidationRadiusMeters ?? 5),
+  );
   const [isActive, setIsActive] = useState(location?.isActive ?? true);
-  const [requireApproval, setRequireApproval] = useState(location?.requireApprovalForOthers ?? false);
+  const [requireApproval, setRequireApproval] = useState(
+    location?.requireApprovalForOthers ?? false,
+  );
   const [staffPin, setStaffPin] = useState('');
   const [slugState, setSlugState] = useState<'idle' | 'checking' | 'ok' | 'taken'>('idle');
   const [confirmDelete, setConfirmDelete] = useState('');
+  const coordinatePairValid =
+    (latitude === '' && longitude === '') || (latitude !== '' && longitude !== '');
+  const parsedLocationRadius = Number(locationRadius);
+  const locationRadiusValid = Number.isInteger(parsedLocationRadius) && parsedLocationRadius > 0;
 
   useEffect(() => {
     if (!slugTouched && name) {
@@ -404,6 +449,9 @@ function LocationDialog({
           slug,
           address: address || undefined,
           timezone,
+          latitude: latitude === '' ? null : Number(latitude),
+          longitude: longitude === '' ? null : Number(longitude),
+          locationValidationRadiusMeters: parsedLocationRadius,
           isActive,
           requireApprovalForOthers: requireApproval,
           staffPin: staffPin || undefined,
@@ -417,6 +465,9 @@ function LocationDialog({
           slug,
           address: address || null,
           timezone,
+          latitude: latitude === '' ? null : Number(latitude),
+          longitude: longitude === '' ? null : Number(longitude),
+          locationValidationRadiusMeters: parsedLocationRadius,
           isActive,
           requireApprovalForOthers: requireApproval,
           ...(staffPin ? { staffPin } : {}),
@@ -486,8 +537,59 @@ function LocationDialog({
             ))}
           </datalist>
         </label>
+        <div className="admin-coordinate-grid">
+          <label className="admin-field">
+            <span>Latitude (optional)</span>
+            <input
+              inputMode="decimal"
+              max="90"
+              min="-90"
+              onChange={(event) => setLatitude(event.target.value)}
+              step="any"
+              type="number"
+              value={latitude}
+            />
+          </label>
+          <label className="admin-field">
+            <span>Longitude (optional)</span>
+            <input
+              inputMode="decimal"
+              max="180"
+              min="-180"
+              onChange={(event) => setLongitude(event.target.value)}
+              step="any"
+              type="number"
+              value={longitude}
+            />
+          </label>
+        </div>
+        <label className="admin-field">
+          <span>Location check radius (metres)</span>
+          <input
+            inputMode="numeric"
+            min="1"
+            onChange={(event) => setLocationRadius(event.target.value)}
+            step="1"
+            type="number"
+            value={locationRadius}
+          />
+        </label>
+        <p className="admin-help">
+          Enter both coordinates to require nearby players to verify their location before updating
+          a public queue. Clear both coordinates to turn the check off.
+        </p>
+        {!coordinatePairValid ? (
+          <p className="admin-error">Enter both latitude and longitude, or clear both.</p>
+        ) : null}
+        {!locationRadiusValid ? (
+          <p className="admin-error">Location check radius must be a positive whole number.</p>
+        ) : null}
         <label className="admin-checkbox">
-          <input checked={isActive} onChange={(event) => setIsActive(event.target.checked)} type="checkbox" />
+          <input
+            checked={isActive}
+            onChange={(event) => setIsActive(event.target.checked)}
+            type="checkbox"
+          />
           Active (inactive locations show as closed publicly)
         </label>
         <label className="admin-checkbox">
@@ -502,7 +604,10 @@ function LocationDialog({
           <>
             <p className="admin-help">
               Approval hides the public integrity notice and gates marking others’ entries behind a
-              staff PIN. {location?.hasStaffPin ? 'A PIN is already set — leave blank to keep it.' : 'Set a PIN below.'}
+              staff PIN.{' '}
+              {location?.hasStaffPin
+                ? 'A PIN is already set — leave blank to keep it.'
+                : 'Set a PIN below.'}
             </p>
             <label className="admin-field">
               <span>Staff PIN {location?.hasStaffPin ? '(leave blank to keep current)' : ''}</span>
@@ -520,7 +625,16 @@ function LocationDialog({
           <button className="secondary-button" onClick={onClose} type="button">
             Cancel
           </button>
-          <button className="primary-button" disabled={save.isPending || slugState === 'taken'} type="submit">
+          <button
+            className="primary-button"
+            disabled={
+              save.isPending ||
+              slugState === 'taken' ||
+              !coordinatePairValid ||
+              !locationRadiusValid
+            }
+            type="submit"
+          >
             {save.isPending ? 'Saving…' : isNew ? 'Create location' : 'Save changes'}
           </button>
         </div>
@@ -529,7 +643,8 @@ function LocationDialog({
         <div className="admin-danger">
           <h3>Delete this location</h3>
           <p>
-            Its games and today’s queue go with it. Type <strong>{location.slug}</strong> to confirm.
+            Its games and today’s queue go with it. Type <strong>{location.slug}</strong> to
+            confirm.
           </p>
           <div className="admin-form-actions">
             <input
@@ -624,10 +739,18 @@ function GamesScreen() {
                 </span>
               </div>
               <div className="admin-game-actions">
-                <button className="secondary-button compact" onClick={() => setNoteFor(game)} type="button">
+                <button
+                  className="secondary-button compact"
+                  onClick={() => setNoteFor(game)}
+                  type="button"
+                >
                   Note
                 </button>
-                <button className="secondary-button compact" onClick={() => setEditing(game)} type="button">
+                <button
+                  className="secondary-button compact"
+                  onClick={() => setEditing(game)}
+                  type="button"
+                >
                   Edit
                 </button>
               </div>
@@ -752,7 +875,11 @@ function GameDialog({
           />
         </label>
         <label className="admin-checkbox">
-          <input checked={isActive} onChange={(event) => setIsActive(event.target.checked)} type="checkbox" />
+          <input
+            checked={isActive}
+            onChange={(event) => setIsActive(event.target.checked)}
+            type="checkbox"
+          />
           Active (inactive games are unjoinable publicly)
         </label>
         {save.isError ? <p className="admin-error">{errorMessage(save.error)}</p> : null}
@@ -815,7 +942,11 @@ function CommunityNoteDialog({ game, onClose }: { game: AdminGameResponse; onClo
           <textarea onChange={(event) => setBody(event.target.value)} rows={5} value={body} />
         </label>
         <label className="admin-checkbox">
-          <input checked={visible} onChange={(event) => setVisible(event.target.checked)} type="checkbox" />
+          <input
+            checked={visible}
+            onChange={(event) => setVisible(event.target.checked)}
+            type="checkbox"
+          />
           Show on the public board
         </label>
         {game.communityNoteUpdatedAt ? (
@@ -829,7 +960,12 @@ function CommunityNoteDialog({ game, onClose }: { game: AdminGameResponse; onClo
           <button className="secondary-button" onClick={onClose} type="button">
             Cancel
           </button>
-          <button className="primary-button" disabled={save.isPending} onClick={() => save.mutate()} type="button">
+          <button
+            className="primary-button"
+            disabled={save.isPending}
+            onClick={() => save.mutate()}
+            type="button"
+          >
             {save.isPending ? 'Saving…' : 'Save note'}
           </button>
         </div>
@@ -847,7 +983,10 @@ function QueueScreen() {
   const { me } = useAdminAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const games = useQuery({ queryKey: ['admin', 'games', locationId], queryFn: () => api.fetchGames(locationId) });
+  const games = useQuery({
+    queryKey: ['admin', 'games', locationId],
+    queryFn: () => api.fetchGames(locationId),
+  });
   const [gameId, setGameId] = useState('');
   const [reasonFor, setReasonFor] = useState<AdminQueueEntryResponse | null>(null);
   const [clearing, setClearing] = useState(false);
@@ -882,7 +1021,8 @@ function QueueScreen() {
     };
   }, [activeGameId, queryClient]);
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['admin', 'queue', activeGameId] });
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ['admin', 'queue', activeGameId] });
 
   const markDone = useMutation({
     mutationFn: (input: { entryId: string; reason: DoneReason }) =>
@@ -916,7 +1056,11 @@ function QueueScreen() {
         </div>
         <div className="admin-queue-controls">
           <span className={`admin-stream-pill is-${streamState}`}>
-            {streamState === 'live' ? 'Live' : streamState === 'offline' ? 'Offline' : 'Reconnecting'}
+            {streamState === 'live'
+              ? 'Live'
+              : streamState === 'offline'
+                ? 'Offline'
+                : 'Reconnecting'}
           </span>
           <select onChange={(event) => setGameId(event.target.value)} value={activeGameId}>
             {games.data?.map((game) => (
@@ -952,7 +1096,11 @@ function QueueScreen() {
               <span />
             </div>
             {board.data.entries.map((entry) => (
-              <div className={`admin-row${entry.status === 'done' ? ' is-done' : ''}`} key={entry.id} role="row">
+              <div
+                className={`admin-row${entry.status === 'done' ? ' is-done' : ''}`}
+                key={entry.id}
+                role="row"
+              >
                 <span>#{entry.ticketNumber}</span>
                 <span>
                   <strong>{entry.displayName}</strong>
@@ -966,7 +1114,11 @@ function QueueScreen() {
                 </span>
                 <span className="admin-row-actions">
                   {entry.status === 'waiting' ? (
-                    <button className="secondary-button compact" onClick={() => setReasonFor(entry)} type="button">
+                    <button
+                      className="secondary-button compact"
+                      onClick={() => setReasonFor(entry)}
+                      type="button"
+                    >
                       Mark done
                     </button>
                   ) : null}
@@ -981,7 +1133,9 @@ function QueueScreen() {
                 </span>
               </div>
             ))}
-            {board.data.entries.length === 0 ? <p className="admin-empty">Queue is empty.</p> : null}
+            {board.data.entries.length === 0 ? (
+              <p className="admin-empty">Queue is empty.</p>
+            ) : null}
           </div>
           <div className="admin-danger">
             <h3>Clear this queue</h3>
@@ -993,7 +1147,10 @@ function QueueScreen() {
         </>
       ) : null}
       {reasonFor ? (
-        <AdminModal onClose={() => setReasonFor(null)} title={`Mark #${reasonFor.ticketNumber} ${reasonFor.displayName}`}>
+        <AdminModal
+          onClose={() => setReasonFor(null)}
+          title={`Mark #${reasonFor.ticketNumber} ${reasonFor.displayName}`}
+        >
           <div className="admin-reason-grid">
             {doneReasons.map((reason) => (
               <button
@@ -1019,17 +1176,28 @@ function QueueScreen() {
             <button className="secondary-button" onClick={() => setClearing(false)} type="button">
               Cancel
             </button>
-            <button className="danger-button" disabled={clearQueue.isPending} onClick={() => clearQueue.mutate()} type="button">
+            <button
+              className="danger-button"
+              disabled={clearQueue.isPending}
+              onClick={() => clearQueue.mutate()}
+              type="button"
+            >
               {clearQueue.isPending ? 'Clearing…' : 'Clear queue'}
             </button>
           </div>
-          {clearQueue.isError ? <p className="admin-error">{errorMessage(clearQueue.error)}</p> : null}
+          {clearQueue.isError ? (
+            <p className="admin-error">{errorMessage(clearQueue.error)}</p>
+          ) : null}
         </AdminModal>
       ) : null}
       {!games.isPending && (games.data?.length ?? 0) === 0 ? (
         <p className="admin-empty">
           No games here yet.{' '}
-          <button className="link-button" onClick={() => navigate(`/admin/locations/${locationId}/games`)} type="button">
+          <button
+            className="link-button"
+            onClick={() => navigate(`/admin/locations/${locationId}/games`)}
+            type="button"
+          >
             Add one
           </button>
           .
@@ -1088,7 +1256,11 @@ function UsersScreen() {
               <span>{user.role === 'superadmin' ? 'all' : user.grantedLocationIds.length}</span>
               <span>{user.isActive ? 'active' : 'inactive'}</span>
               <span className="admin-row-actions">
-                <button className="secondary-button compact" onClick={() => setEditing(user)} type="button">
+                <button
+                  className="secondary-button compact"
+                  onClick={() => setEditing(user)}
+                  type="button"
+                >
                   Manage
                 </button>
                 <button
@@ -1108,7 +1280,11 @@ function UsersScreen() {
         <UserCreateDialog locations={locations.data ?? []} onClose={() => setCreating(false)} />
       ) : null}
       {editing ? (
-        <UserManageDialog locations={locations.data ?? []} onClose={() => setEditing(null)} user={editing} />
+        <UserManageDialog
+          locations={locations.data ?? []}
+          onClose={() => setEditing(null)}
+          user={editing}
+        />
       ) : null}
     </main>
   );
@@ -1159,11 +1335,18 @@ function UserCreateDialog({
         </label>
         <label className="admin-field">
           <span>Temporary password (min 10 chars)</span>
-          <input onChange={(event) => setPassword(event.target.value)} type="text" value={password} />
+          <input
+            onChange={(event) => setPassword(event.target.value)}
+            type="text"
+            value={password}
+          />
         </label>
         <label className="admin-field">
           <span>Role</span>
-          <select onChange={(event) => setRole(event.target.value as 'superadmin' | 'operator')} value={role}>
+          <select
+            onChange={(event) => setRole(event.target.value as 'superadmin' | 'operator')}
+            value={role}
+          >
             <option value="operator">Operator</option>
             <option value="superadmin">Superadmin</option>
           </select>
@@ -1205,7 +1388,8 @@ function UserManageDialog({
     onSuccess: invalidate,
   });
   const changeRole = useMutation({
-    mutationFn: (role: 'superadmin' | 'operator') => api.updateUser(user.id, { role }, me.csrfToken),
+    mutationFn: (role: 'superadmin' | 'operator') =>
+      api.updateUser(user.id, { role }, me.csrfToken),
     onSuccess: invalidate,
   });
   const resetPassword = useMutation({
@@ -1227,18 +1411,29 @@ function UserManageDialog({
             <option value="superadmin">Superadmin</option>
           </select>
         </label>
-        {changeRole.isError ? <p className="admin-error">{errorMessage(changeRole.error)}</p> : null}
+        {changeRole.isError ? (
+          <p className="admin-error">{errorMessage(changeRole.error)}</p>
+        ) : null}
 
         {user.role === 'operator' ? (
           <>
             <GrantsPicker locations={locations} onChange={setGrants} value={grants} />
-            <button className="secondary-button" disabled={saveGrants.isPending} onClick={() => saveGrants.mutate()} type="button">
+            <button
+              className="secondary-button"
+              disabled={saveGrants.isPending}
+              onClick={() => saveGrants.mutate()}
+              type="button"
+            >
               {saveGrants.isPending ? 'Saving…' : 'Save grants'}
             </button>
-            {saveGrants.isError ? <p className="admin-error">{errorMessage(saveGrants.error)}</p> : null}
+            {saveGrants.isError ? (
+              <p className="admin-error">{errorMessage(saveGrants.error)}</p>
+            ) : null}
           </>
         ) : (
-          <p className="admin-help">Superadmins have access to every location; grants do not apply.</p>
+          <p className="admin-help">
+            Superadmins have access to every location; grants do not apply.
+          </p>
         )}
 
         <div className="admin-danger">
@@ -1259,7 +1454,9 @@ function UserManageDialog({
               {resetPassword.isSuccess ? 'Updated' : 'Set password'}
             </button>
           </div>
-          {resetPassword.isError ? <p className="admin-error">{errorMessage(resetPassword.error)}</p> : null}
+          {resetPassword.isError ? (
+            <p className="admin-error">{errorMessage(resetPassword.error)}</p>
+          ) : null}
         </div>
       </div>
     </AdminModal>
@@ -1284,7 +1481,11 @@ function GrantsPicker({
       {locations.length === 0 ? <p className="admin-help">No locations to grant yet.</p> : null}
       {locations.map((location) => (
         <label className="admin-checkbox" key={location.id}>
-          <input checked={value.includes(location.id)} onChange={() => toggle(location.id)} type="checkbox" />
+          <input
+            checked={value.includes(location.id)}
+            onChange={() => toggle(location.id)}
+            type="checkbox"
+          />
           {location.name}
         </label>
       ))}
@@ -1335,13 +1536,28 @@ function MaintenanceDialog({ onClose }: { onClose: () => void }) {
             <input onChange={(event) => setReason(event.target.value)} value={reason} />
           </label>
           <div className="admin-form-actions">
-            <button className="danger-button" disabled={setLevel.isPending} onClick={() => setLevel.mutate('maintenance')} type="button">
+            <button
+              className="danger-button"
+              disabled={setLevel.isPending}
+              onClick={() => setLevel.mutate('maintenance')}
+              type="button"
+            >
               Enter maintenance
             </button>
-            <button className="secondary-button" disabled={setLevel.isPending} onClick={() => setLevel.mutate('shed')} type="button">
+            <button
+              className="secondary-button"
+              disabled={setLevel.isPending}
+              onClick={() => setLevel.mutate('shed')}
+              type="button"
+            >
               Force shed
             </button>
-            <button className="primary-button" disabled={setLevel.isPending} onClick={() => setLevel.mutate(null)} type="button">
+            <button
+              className="primary-button"
+              disabled={setLevel.isPending}
+              onClick={() => setLevel.mutate(null)}
+              type="button"
+            >
               Clear override
             </button>
           </div>
@@ -1378,7 +1594,12 @@ function AdminModal({
       >
         <header className="admin-modal-head">
           <h2>{title}</h2>
-          <button aria-label="Close" className="secondary-button compact" onClick={onClose} type="button">
+          <button
+            aria-label="Close"
+            className="secondary-button compact"
+            onClick={onClose}
+            type="button"
+          >
             ✕
           </button>
         </header>

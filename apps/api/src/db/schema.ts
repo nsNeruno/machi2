@@ -1,7 +1,9 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   date,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -61,12 +63,32 @@ export const locations = pgTable(
     name: text('name').notNull(),
     address: text('address'),
     timezone: text('timezone').notNull(),
+    latitude: doublePrecision('latitude'),
+    longitude: doublePrecision('longitude'),
+    locationValidationRadiusMeters: integer('location_validation_radius_meters')
+      .default(5)
+      .notNull(),
     isActive: boolean('is_active').default(true).notNull(),
     staffPinHash: text('staff_pin_hash'),
     requireApprovalForOthers: boolean('require_approval_for_others').default(false).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [uniqueIndex('locations_slug_unique').on(table.slug)],
+  (table) => [
+    uniqueIndex('locations_slug_unique').on(table.slug),
+    check(
+      'locations_coordinates_pair_check',
+      sql`(${table.latitude} is null and ${table.longitude} is null) or (${table.latitude} is not null and ${table.longitude} is not null)`,
+    ),
+    check(
+      'locations_latitude_range_check',
+      sql`${table.latitude} is null or ${table.latitude} between -90 and 90`,
+    ),
+    check(
+      'locations_longitude_range_check',
+      sql`${table.longitude} is null or ${table.longitude} between -180 and 180`,
+    ),
+    check('locations_validation_radius_check', sql`${table.locationValidationRadiusMeters} > 0`),
+  ],
 );
 
 export const games = pgTable(

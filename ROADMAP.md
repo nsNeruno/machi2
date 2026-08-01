@@ -127,8 +127,17 @@ Build to `UI_DESIGN.md` §8.
       (the primary target) is metered, so this is load-bearing rather than a metered-host
       nice-to-have — infra
 - [x] Tests: each threshold trips the right level; recovery waits out the cooldown
-- Manual override can only *raise* the effective level, never mask a real overload. Admin
+- Manual override can only _raise_ the effective level, never mask a real overload. Admin
   routes and reads are never shed, so staff can always operate and lift maintenance.
+
+## M7.6 — Location-gated public queue changes
+
+- [x] Optional latitude/longitude and per-location validation radius (default 5 m)
+- [x] Admin location editor enables validation with a complete coordinate pair
+- [x] Queue-board location status with automatic check and recoverable retry states
+- [x] Every public join/done validates a fresh position with accuracy ≤20 m; admin exempt
+- [x] Player coordinates remain transient; reads and unconfigured locations stay ungated
+- [x] Tests cover distance/accuracy boundaries, idempotency recovery, staff PIN, and admin exemption
 
 ## M8 — Ship
 

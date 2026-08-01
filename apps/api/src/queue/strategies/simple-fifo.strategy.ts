@@ -20,6 +20,7 @@ import { PublicWriteRateLimiterService } from '../../common/public-write-rate-li
 import { getEnvironment } from '../../config/environment';
 import { DbService } from '../../db/db.service';
 import { idempotencyRecords, queueEntries } from '../../db/schema';
+import { LocationValidationService } from '../../locations/location-validation.service';
 import type { QueueContext } from '../../locations/locations.service';
 import { toQueueEntryResponse } from '../queue-entry.presenter';
 import type { CompleteInput, EnqueueInput, QueueStrategy } from './queue-strategy.interface';
@@ -31,6 +32,7 @@ export class SimpleFifoStrategy implements QueueStrategy {
   constructor(
     private readonly dbService: DbService,
     private readonly rateLimiter: PublicWriteRateLimiterService,
+    private readonly locationValidationService: LocationValidationService,
   ) {}
 
   async enqueue(context: QueueContext, input: EnqueueInput): Promise<EnqueueResponse> {
@@ -82,6 +84,8 @@ export class SimpleFifoStrategy implements QueueStrategy {
         }
         return enqueueResponseSchema.parse(replay.responseJson);
       }
+
+      this.locationValidationService.assertPublicWriteAllowed(context.location, input.position);
 
       // Per-device enqueue interval (default 1 per 5s; ENQUEUE_DEVICE_* env). The per-IP
       // tier (ENQUEUE_IP_* in the controller) and the re-join cooldown are the other
@@ -207,6 +211,7 @@ export class SimpleFifoStrategy implements QueueStrategy {
         return completeQueueEntryResponseSchema.parse(replay.responseJson);
       }
 
+      this.locationValidationService.assertPublicWriteAllowed(context.location, input.position);
       this.rateLimiter.assertForActor('complete', input.actor, 10, 60_000);
       await this.lockEntry(tx, entryId);
       const [entry] = await tx
